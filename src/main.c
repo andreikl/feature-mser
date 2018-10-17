@@ -24,7 +24,7 @@ const char* INPUT_DEF = "-";
 const char* OUTPUT = "-o";
 const char* OUTPUT_DEF = "-";
 
-KHASH_SET_INIT_STR(str, char*)
+KHASH_MAP_INIT_STR(str, char*)
 khash_t(str) *h;
 
 void print_help() {
@@ -44,7 +44,7 @@ void print_help() {
     exit(0);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char** argv) {
     h = kh_init(str);
     int ret;
     unsigned k;
@@ -52,15 +52,13 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         if (argv[i][0] == '-') {
             k = kh_put(str, h, argv[i], &ret);
-            if (ret == 0)
-                kh_val(h, k) = (i + 1 < argc) ? argv[i + 1] : NULL;
+            kh_val(h, k) = (i + 1 < argc) ? argv[i + 1] : NULL;
         }
     }
 
     k = kh_get(str, h, HELP);
     if (k != kh_end(h)) {
         print_help();
-        //printf(kh_val(h, k));
     }
     else {
         const char* input_file = read_input_value(INPUT, INPUT_DEF);
@@ -68,7 +66,7 @@ int main(int argc, char *argv[]) {
         int input_size;
         char* input_data = read_file(input_file, &input_size);
 
-        printf("%s, size: %d", input_file, input_size);
+        printf("%s, size: %d\n", input_file, input_size);
 
         free(input_data);
     }
