@@ -301,15 +301,6 @@ struct _MserStats {
 };
 
 
-/** @name Construction and Destruction
-** @{
-**/
-MserFilt *mser_new(int ndims, int const *dims);
-
-
-void mser_delete(MserFilt *f);
-
-
 /** @} */
 
 
@@ -348,53 +339,6 @@ MserStats const *mser_get_stats(MserFilt const *f);
 
 
 /** @} */
-
-
-/** @name Retrieving parameters
-** @{
-**/
-unsigned char mser_get_delta(MserFilt const *f);
-
-
-float mser_get_min_area(MserFilt const *f);
-
-
-float mser_get_max_area(MserFilt const *f);
-
-
-float mser_get_max_variation(MserFilt const *f);
-
-
-float mser_get_min_diversity(MserFilt const *f);
-
-
-/** @} */
-
-
-/** @name Setting parameters
-** @{
-**/
-void mser_set_delta(MserFilt *f, unsigned char x);
-
-
-void mser_set_min_area(MserFilt *f, float x);
-
-
-void mser_set_max_area(MserFilt *f, float x);
-
-
-void mser_set_max_variation(MserFilt *f, float x);
-
-
-void mser_set_min_diversity(MserFilt *f, float x);
-
-
-/** @} */
-
-
-/* ====================================================================
-*                                                   INLINE DEFINITIONS
-* ================================================================== */
 
 
 /** @internal
@@ -553,52 +497,6 @@ struct _MserFilt {
 /* ----------------------------------------------------------------- */
 
 
-/** @brief Get delta
-** @param f MSER filter.
-** @return value of @c delta.
-**/
-unsigned char
-mser_get_delta(MserFilt const *f) {
-    return (f->delta);
-}
-
-
-/** @brief Set delta
-** @param f MSER filter.
-** @param x value of @c delta.
-**/
-void
-mser_set_delta(MserFilt *f, unsigned char x) {
-    f->delta = x;
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get minimum diversity
-** @param  f MSER filter.
-** @return value of @c minimum diversity.
-**/
-float
-mser_get_min_diversity(MserFilt const *f) {
-    return (f->min_diversity);
-}
-
-
-/** @brief Set minimum diversity
-** @param f MSER filter.
-** @param x value of @c minimum diversity.
-**/
-void
-mser_set_min_diversity(MserFilt *f, float x) {
-    f->min_diversity = x;
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
 /** @brief Get statistics
 ** @param f MSER filter.
 ** @return statistics.
@@ -606,75 +504,6 @@ mser_set_min_diversity(MserFilt *f, float x) {
 MserStats const *
 mser_get_stats(MserFilt const *f) {
     return (&f->stats);
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get maximum region area
-** @param f MSER filter.
-** @return maximum region area.
-**/
-float
-mser_get_max_area(MserFilt const *f) {
-    return (f->max_area);
-}
-
-
-/** @brief Set maximum region area
-** @param f MSER filter.
-** @param x maximum region area.
-**/
-void
-mser_set_max_area(MserFilt *f, float x) {
-    f->max_area = x;
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get minimum region area
-** @param f MSER filter.
-** @return minimum region area.
-**/
-float
-mser_get_min_area(MserFilt const *f) {
-    return (f->min_area);
-}
-
-
-/** @brief Set minimum region area
-** @param f MSER filter.
-** @param x minimum region area.
-**/
-void
-mser_set_min_area(MserFilt *f, float x) {
-    f->min_area = x;
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get maximum region variation
-** @param f MSER filter.
-** @return maximum region variation.
-**/
-float
-mser_get_max_variation(MserFilt const *f) {
-    return (f->max_variation);
-}
-
-
-/** @brief Set maximum region variation
-** @param f MSER filter.
-** @param x maximum region variation.
-**/
-void
-mser_set_max_variation(MserFilt *f, float x) {
-    f->max_variation = x;
 }
 
 
@@ -869,11 +698,11 @@ mser_new(int ndims, int const *dims) {
         f->rell = 0;
 
         /* other parameters */
-        f->delta = 5;
-        f->max_area = 0.75f;
-        f->min_area = 3.0f / f->nel;
-        f->max_variation = 0.25f;
-        f->min_diversity = 0.2f;
+        f->delta = 2;
+        f->max_area = 0.5f;
+        f->min_area = 0.0001f;
+        f->max_variation = 0.5f;
+        f->min_diversity = 0.33f;
     }
     return (f);
 }
@@ -1553,8 +1382,10 @@ mser_ell_fit(MserFilt *f) {
 
 
 
-int CPUImageMser(unsigned char *data, int width, int height, int depth, float delta, float max_area, float min_area,
-                 float max_variation, float min_diversity, int dark_on_bright) {
+int mser(unsigned char *data, int width, int height) {
+    float depth = 1;
+    int dark_on_bright = 1;
+
     bool err = false;
     char err_msg[1024];
 
@@ -1582,35 +1413,6 @@ int CPUImageMser(unsigned char *data, int width, int height, int depth, float de
                  "Could not create an MSER filter.");
         goto done;
     }
-
-    if (delta >= 0)
-        mser_set_delta(filt, (unsigned char) delta);
-    if (max_area >= 0)
-        mser_set_max_area(filt, max_area);
-    if (min_area >= 0)
-        mser_set_min_area(filt, min_area);
-    if (max_variation >= 0)
-        mser_set_max_variation(filt, max_variation);
-    if (min_diversity >= 0)
-        mser_set_min_diversity(filt, min_diversity);
-    if (delta >= 0)
-        mser_set_delta(filtinv, (unsigned char) delta);
-    if (max_area >= 0)
-        mser_set_max_area(filtinv, max_area);
-    if (min_area >= 0)
-        mser_set_min_area(filtinv, min_area);
-    if (max_variation >= 0)
-        mser_set_max_variation(filtinv, max_variation);
-    if (min_diversity >= 0)
-        mser_set_min_diversity(filtinv, min_diversity);
-
-
-    printf("mser: parameters:\n");
-    printf("mser:   delta         = %d\n", mser_get_delta(filt));
-    printf("mser:   max_area      = %g\n", mser_get_max_area(filt));
-    printf("mser:   min_area      = %g\n", mser_get_min_area(filt));
-    printf("mser:   max_variation = %g\n", mser_get_max_variation(filt));
-    printf("mser:   min_diversity = %g\n", mser_get_min_diversity(filt));
 
     if (dark_on_bright) {
         double startTime = now();

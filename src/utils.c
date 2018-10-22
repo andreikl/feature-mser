@@ -10,10 +10,19 @@
 KHASH_MAP_INIT_STR(str, char*)
 extern khash_t(str) *h;
 
-const char* read_input_value(const char* name, const char def_value[]) {
+const char* read_str_value(const char* name, const char def_value[]) {
     unsigned k = kh_get(str, h, name);
     if (k != kh_end(h)) {
         return kh_val(h, k);
+    }
+    return def_value;
+}
+
+int read_int_value(const char name[], int def_value) {
+    unsigned k = kh_get(str, h, name);
+    if (k != kh_end(h)) {
+        const char* value = kh_val(h, k);
+        return atoi(value);
     }
     return def_value;
 }

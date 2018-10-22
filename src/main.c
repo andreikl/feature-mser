@@ -61,10 +61,14 @@ int main(int argc, char** argv) {
         print_help();
     }
     else {
-        const char* input_file = read_input_value(INPUT, INPUT_DEF);
+        const char* input_file = read_str_value(INPUT, INPUT_DEF);
+        int width = read_int_value(WIDTH, WIDTH_DEF);
+        int height = read_int_value(HEIGHT, HEIGHT_DEF);
 
         int input_size;
         char* input_data = read_file(input_file, &input_size);
+
+        mser(input_data, width, height);
 
         printf("%s, size: %d\n", input_file, input_size);
 
