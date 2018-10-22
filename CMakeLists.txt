@@ -37,15 +37,19 @@ endif()
 
 # external libs
 set(klib "external/klib")
+set(vlfeat_mser "external/vlfeat_mser")
+
 INCLUDE_DIRECTORIES(
     src
     ${klib}
+    ${vlfeat_mser}
 )
 
-message( "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}" )
+#message( "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}" )
 
 ADD_EXECUTABLE(feature-mser
     src/utils.c
+    ${vlfeat_mser}/mser.c
     src/main.c
 )
 
