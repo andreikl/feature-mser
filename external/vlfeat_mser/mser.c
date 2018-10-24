@@ -4,76 +4,13 @@
 * This file is part of the VLFeat library and is made available under
 * the terms of the BSD license (see the COPYING file).
 */
-#define MSER_DRIVER_VERSION 0.2
+#include "constants.h"
 
 #include <stdbool.h>
-
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-
-#include "stb_image.h"
-/* ref:https://github.com/nothings/stb/blob/master/stb_image.h */
-#define TJE_IMPLEMENTATION
-
-#include "tiny_jpeg.h"
-/* ref:https://github.com/serge-rgb/TinyJPEG/blob/master/tiny_jpeg.h */
-
 #include <stdlib.h>
 #include <stdio.h>
-/* 计时 */
 #include <stdint.h>
-
-#if   defined(__APPLE__)
-#include <mach/mach_time.h>
-#elif defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-
-#include <windows.h>
-
-#else /* __linux */
 #include <time.h>
-#ifndef  CLOCK_MONOTONIC  /* _RAW */
-#define CLOCK_MONOTONIC CLOCK_REALTIME
-#endif
-#endif
-
-static
-uint64_t nanotimer() {
-    static int ever = 0;
-#if defined(__APPLE__)
-    static mach_timebase_info_data_t frequency;
-    if (!ever)
-    {
-        if (mach_timebase_info(&frequency) != KERN_SUCCESS)
-        {
-            return(0);
-        }
-        ever = 1;
-    }
-    return;
-#elif defined(_WIN32)
-    static LARGE_INTEGER frequency;
-    if (!ever) {
-        QueryPerformanceFrequency(&frequency);
-        ever = 1;
-    }
-    LARGE_INTEGER t;
-    QueryPerformanceCounter(&t);
-    return ((t.QuadPart * (uint64_t) 1e9) / frequency.QuadPart);
-#else   /* __linux */
-    struct timespec t;
-    if (!ever)
-    {
-        if (clock_gettime(CLOCK_MONOTONIC, &t) != 0)
-        {
-            return(0);
-        }
-        ever = 1;
-    }
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return((t.tv_sec * (uint64_t) 1e9) + t.tv_nsec);
-#endif
-}
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846   // pi
@@ -86,36 +23,8 @@ uint64_t nanotimer() {
 #ifndef min
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 #endif
-static double now() {
-    static uint64_t epoch = 0;
-    if (!epoch) {
-        epoch = nanotimer();
-    }
-    return ((nanotimer() - epoch) / 1e9);
-};
 
-double calcElapsed(double start, double end) {
-    double took = -start;
-    return (took + end);
-}
-
-
-unsigned char *loadImage(const char *filename, int *width, int *height, int *depth) {
-    unsigned char *output = stbi_load(filename, width, height, depth, 1);
-    *depth = 1;
-    return (output);
-}
-
-
-bool saveJpeg(const char *filename, int width, int height, int depth, unsigned char *bits) {
-    if (!tje_encode_to_file(filename, width, height, depth, true, bits)) {
-        fprintf(stderr, "写入 JPEG 文件失败.\n");
-        return (false);
-    }
-    return (true);
-}
-
-void drawPoint(unsigned char *bits, int width, int depth, int x, int y, const uint8_t *color) {
+/*void drawPoint(unsigned char *bits, int width, int depth, int x, int y, const uint8_t *color) {
     for (int i = 0; i < min(depth, 3); ++i) {
         bits[(y * width + x) * depth + i] = color[i];
     }
@@ -153,32 +62,32 @@ void drawRectangle(unsigned char *bits, int width, int depth, int x1, int y1, in
     drawLine(bits, width, depth, x2, y1, x2, y2, col);
     drawLine(bits, width, depth, x2, y2, x1, y2, col);
     drawLine(bits, width, depth, x1, y2, x1, y1, col);
-}
+}*/
 
-void drawRectangleByRegion(const float *region, int width, int height, int depth, unsigned char *bits,
+/*void drawRectangleByRegion(const float *region, int width, int height, int depth, unsigned char *bits,
                            const uint8_t *color) {
 
-    /* Centroid (mean) */
+    // Centroid (mean)
     const float x = region[0];
     const float y = region[1];
 
-    /* Covariance matrix [a b; b c] */
+    // Covariance matrix [a b; b c]
     const float a = region[2];
     const float b = region[3];
     const float c = region[4];
 
-    /* Eigenvalues of the covariance matrix */
+    // Eigenvalues of the covariance matrix
     const float d = a + c;
     const float e = a - c;
     const float f = sqrtf(4.0f * b * b + e * e);
-    const float e0 = (d + f) / 2.0f;       /* First eigenvalue */
-    const float e1 = (d - f) / 2.0f;       /* Second eigenvalue */
+    const float e0 = (d + f) / 2.0f;       //First eigenvalue 
+    const float e1 = (d - f) / 2.0f;       //Second eigenvalue
 
-    /* Desired norm of the eigenvectors */
+    // Desired norm of the eigenvectors
     const float e0sq = sqrtf(e0);
     const float e1sq = sqrtf(e1);
 
-    /* Eigenvectors */
+    // Eigenvectors
     float v0x = e0sq;
     float v0y = 0.0f;
     float v1x = 0.0f;
@@ -190,7 +99,7 @@ void drawRectangleByRegion(const float *region, int width, int height, int depth
         v1x = e1 - c;
         v1y = b;
 
-        /* Normalize the eigenvectors */
+        // Normalize the eigenvectors
         const float n0 = e0sq / sqrtf(v0x * v0x + v0y * v0y);
         v0x *= n0;
         v0y *= n0;
@@ -216,30 +125,30 @@ void drawRectangleByRegion(const float *region, int width, int height, int depth
     min_x = max(0, x * 2 - max_x);
     min_y = max(0, y * 2 - max_y);
     drawRectangle(bits, width, depth, min_x, min_y, max_x, max_y, color);
-}
+}*/
 
-void drawEllipse(const float *region, int width, int height, int depth, unsigned char *bits, const uint8_t *color) {
-    /* Centroid (mean) */
+/*void drawEllipse(const float *region, int width, int height, int depth, unsigned char *bits, const uint8_t *color) {
+    // Centroid (mean)
     const float x = region[0];
     const float y = region[1];
 
-    /* Covariance matrix [a b; b c] */
+    // Covariance matrix [a b; b c]
     const float a = region[2];
     const float b = region[3];
     const float c = region[4];
 
-    /* Eigenvalues of the covariance matrix */
+    // Eigenvalues of the covariance matrix
     const float d = a + c;
     const float e = a - c;
     const float f = sqrtf(4.0f * b * b + e * e);
-    const float e0 = (d + f) / 2.0f;       /* First eigenvalue */
-    const float e1 = (d - f) / 2.0f;       /* Second eigenvalue */
+    const float e0 = (d + f) / 2.0f;       // First eigenvalue
+    const float e1 = (d - f) / 2.0f;       // Second eigenvalue
 
-    /* Desired norm of the eigenvectors */
+    // Desired norm of the eigenvectors
     const float e0sq = sqrtf(e0);
     const float e1sq = sqrtf(e1);
 
-    /* Eigenvectors */
+    // Eigenvectors
     float v0x = e0sq;
     float v0y = 0.0f;
     float v1x = 0.0f;
@@ -251,7 +160,7 @@ void drawEllipse(const float *region, int width, int height, int depth, unsigned
         v1x = e1 - c;
         v1y = b;
 
-        /* Normalize the eigenvectors */
+        // Normalize the eigenvectors
         const float n0 = e0sq / sqrtf(v0x * v0x + v0y * v0y);
         v0x *= n0;
         v0y *= n0;
@@ -269,7 +178,7 @@ void drawEllipse(const float *region, int width, int height, int depth, unsigned
             for (int i = 0; i < min(depth, 3); ++i)
                 bits[(y2 * width + x2) * depth + i] = color[i];
     }
-}
+}*/
 
 /** @brief Maximum value
 **
@@ -1415,12 +1324,14 @@ int mser(unsigned char *data, int width, int height) {
     }
 
     if (dark_on_bright) {
-        double startTime = now();
+#ifdef DEBUG
+        clock_t start_time = clock();
+#endif
         mser_process(filt, (unsigned char *) data);
-        double nProcessTime = calcElapsed(startTime, now());
-        printf("Elapsed: %d ms \n ", (int) (nProcessTime * 1000));
-        // Save result  -----------------------------------------------
-
+#ifdef DEBUG
+        double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+        printf("mser: elapsed %f ms\n", diff);
+#endif
         /*
         int   nregions = mser_get_regions_num(filt);
         unsigned int const *   regions = mser_get_regions(filt);
@@ -1439,14 +1350,14 @@ int mser(unsigned char *data, int width, int height) {
         printf("dof: %d \t", dof);
         printf("nframes: %d \t", nframes);
         // Draw ellipses in the original image
-        const uint8_t colors[3] = {127, 127, 127};
+        /*const uint8_t colors[3] = {127, 127, 127};
         for (int x = 0; x < 2; ++x) {
             frames = mser_get_ell(filt);
             for (i = 0; i < nframes; ++i) {
                 drawEllipse(frames, width, height, depth, data, colors);
                 frames += dof;
             }
-        }
+        }*/
     } else {
         // allocate buffer
         datainv = (unsigned char *) malloc(width * height * depth);
@@ -1460,11 +1371,15 @@ int mser(unsigned char *data, int width, int height) {
                      "Could not allocate enough memory.");
             goto done;
         }
-        double startTime = now();
-        mser_process(filtinv, (unsigned char *) datainv);
-        double nProcessTime = calcElapsed(startTime, now());
-        printf("Elapsed: %d ms \n ", (int) (nProcessTime * 1000));
-        // Save result  -----------------------------------------------
+
+#ifdef DEBUG
+        clock_t start_time = clock();
+#endif
+        mser_process(filt, (unsigned char *)datainv);
+#ifdef DEBUG
+        double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+        printf("mser: elapsed %f ms\n", diff);
+#endif
 
         /*
          int  nregionsinv = mser_get_regions_num(filtinv);
@@ -1480,10 +1395,10 @@ int mser(unsigned char *data, int width, int height) {
         dof = mser_get_ell_dof(filtinv);
         const uint8_t colors[3] = {0, 0, 0};
         framesinv = mser_get_ell(filtinv);
-        for (i = 0; i < nframesinv; ++i) {
+        /*for (i = 0; i < nframesinv; ++i) {
             drawEllipse(framesinv, width, height, depth, data, colors);
             framesinv += dof;
-        }
+        }*/
     }
     done:
     // release filter
