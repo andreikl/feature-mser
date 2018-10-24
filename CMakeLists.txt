@@ -6,7 +6,7 @@ project (feature-mser)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "-g -Wall -Wextra -O2 -std=c++14")
-set(CMAKE_C_FLAGS "-Wall -O2")
+set(CMAKE_C_FLAGS "-Wall -O2 -std=c99")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
