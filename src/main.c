@@ -4,6 +4,7 @@
 #include "khash.h"
 
 #include "utils.h"
+#include "mser.h"
 
 const char* WIDTH = "-w";
 const int WIDTH_DEF = 640;
