@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+#include <math.h>
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846   // pi
@@ -127,7 +128,7 @@ void drawRectangle(unsigned char *bits, int width, int depth, int x1, int y1, in
     drawRectangle(bits, width, depth, min_x, min_y, max_x, max_y, color);
 }*/
 
-/*void drawEllipse(const float *region, int width, int height, int depth, unsigned char *bits, const uint8_t *color) {
+void drawEllipse(const float *region, int width, int height, int depth, unsigned char *bits, const uint8_t *color) {
     // Centroid (mean)
     const float x = region[0];
     const float y = region[1];
@@ -178,7 +179,7 @@ void drawRectangle(unsigned char *bits, int width, int depth, int x1, int y1, in
             for (int i = 0; i < min(depth, 3); ++i)
                 bits[(y2 * width + x2) * depth + i] = color[i];
     }
-}*/
+}
 
 /** @brief Maximum value
 **
@@ -566,35 +567,36 @@ unsigned int climb(MserReg *r, unsigned int idx) {
 ** @param dims  dimensions.
 **/
 
-MserFilt *
-mser_new(int ndims, int const *dims) {
-    MserFilt *f = (MserFilt *) calloc(sizeof(MserFilt), 1);
+MserFilt* mser_new(int width, int height) {
 
-    f->ndims = ndims;
-    f->dims = (int *) malloc(sizeof(int) * ndims);
-    f->subs = (int *) malloc(sizeof(int) * ndims);
-    f->dsubs = (int *) malloc(sizeof(int) * ndims);
-    f->strides = (int *) malloc(sizeof(int) * ndims);
-    /* shortcuts */
+    MserFilt *f = (MserFilt *) calloc(sizeof(MserFilt), 1);
+    f->ndims = 2;
+    f->dims = (int*) malloc(sizeof(int) * f->ndims);
+    f->subs = (int*) malloc(sizeof(int) * f->ndims);
+    f->dsubs = (int*) malloc(sizeof(int) * f->ndims);
+    f->strides = (int*) malloc(sizeof(int) * f->ndims);
+
+    // shortcuts
     if (f->dims != NULL && f->subs != NULL && f->dsubs != NULL && f->strides != NULL) {
         int k = 0;
 
-        /* copy dims to f->dims */
-        memcpy(f->dims, dims, sizeof(int) * ndims);
+        // copy dims to f->dims
+        f->dims[0] = width;
+        f->dims[1] = height;
 
-        /* compute strides to move into the N-dimensional image array */
+        // compute strides to move into the N-dimensional image array
         f->strides[0] = 1;
-        for (k = 1; k < ndims; ++k) {
-            f->strides[k] = f->strides[k - 1] * dims[k - 1];
+        for (k = 1; k < 2; ++k) {
+            f->strides[k] = f->strides[k - 1] * f->dims[k - 1];
         }
 
-        /* total number of pixels */
-        f->nel = f->strides[ndims - 1] * dims[ndims - 1];
+        // total number of pixels
+        f->nel = f->strides[2 - 1] * f->dims[2 - 1];
 
-        /* dof of ellipsoids */
-        f->dof = ndims * (ndims + 1) / 2 + ndims;
+        // dof of ellipsoids
+        f->dof = 2 * (2 + 1) / 2 + 2;
 
-        /* more buffers */
+        // more buffers
         f->perm = (unsigned int *) malloc(sizeof(unsigned int) * f->nel);
         f->joins = (unsigned int *) malloc(sizeof(unsigned int) * f->nel);
         f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
@@ -606,7 +608,7 @@ mser_new(int ndims, int const *dims) {
         f->ell = 0;
         f->rell = 0;
 
-        /* other parameters */
+        // other parameters
         f->delta = 2;
         f->max_area = 0.5f;
         f->min_area = 0.0001f;
@@ -1305,21 +1307,14 @@ int mser(unsigned char *data, int width, int height) {
     unsigned char *datainv = NULL;
     float const *frames;
     float const *framesinv;
-    enum {
-        ndims = 2
-    };
-    int dims[ndims];
     int nframes = 0, nframesinv = 0;
     int i, dof;
-    dims[0] = width;
-    dims[1] = height;
 
-    filt = mser_new(ndims, dims);
-    filtinv = mser_new(ndims, dims);
+    filt = mser_new(width, height);
+    filtinv = mser_new(width, height);
 
     if (!filt || !filtinv) {
-        snprintf(err_msg, sizeof(err_msg),
-                 "Could not create an MSER filter.");
+        snprintf(err_msg, sizeof(err_msg), "Could not create an MSER filter.");
         goto done;
     }
 
@@ -1350,14 +1345,14 @@ int mser(unsigned char *data, int width, int height) {
         printf("dof: %d \t", dof);
         printf("nframes: %d \t", nframes);
         // Draw ellipses in the original image
-        /*const uint8_t colors[3] = {127, 127, 127};
+        const uint8_t colors[3] = {127, 127, 127};
         for (int x = 0; x < 2; ++x) {
             frames = mser_get_ell(filt);
             for (i = 0; i < nframes; ++i) {
                 drawEllipse(frames, width, height, depth, data, colors);
                 frames += dof;
             }
-        }*/
+        }
     } else {
         // allocate buffer
         datainv = (unsigned char *) malloc(width * height * depth);
@@ -1367,8 +1362,7 @@ int mser(unsigned char *data, int width, int height) {
 
         if (!datainv) {
             err = false;
-            snprintf(err_msg, sizeof(err_msg),
-                     "Could not allocate enough memory.");
+            snprintf(err_msg, sizeof(err_msg), "Could not allocate enough memory.");
             goto done;
         }
 
@@ -1395,12 +1389,12 @@ int mser(unsigned char *data, int width, int height) {
         dof = mser_get_ell_dof(filtinv);
         const uint8_t colors[3] = {0, 0, 0};
         framesinv = mser_get_ell(filtinv);
-        /*for (i = 0; i < nframesinv; ++i) {
+        for (i = 0; i < nframesinv; ++i) {
             drawEllipse(framesinv, width, height, depth, data, colors);
             framesinv += dof;
-        }*/
+        }
     }
-    done:
+done:
     // release filter
     if (filt) {
         mser_delete(filt);
