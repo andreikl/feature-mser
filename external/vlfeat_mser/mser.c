@@ -549,8 +549,6 @@ MserFilt* mser_new(int width, int height) {
 
     // shortcuts
     if (f->dims != NULL && f->subs != NULL && f->dsubs != NULL) {
-        int k = 0;
-
         // copy dims to f->dims
         f->dims[0] = width;
         f->dims[1] = height;
@@ -681,8 +679,7 @@ mser_process(MserFilt *f, unsigned char const *im) {
         memset(buckets, 0, sizeof(unsigned int) * MSER_PIX_MAXVAL);
 
 
-        /* compute bucket size (how many pixels for each intensity
-        * value) */
+        //compute bucket size (how many pixels for each intensity value)
         for (i = 0; i < (int) nel; ++i) {
             unsigned char v = im[i];
             ++buckets[v];
@@ -1272,13 +1269,11 @@ mser_ell_fit(MserFilt *f) {
 
 int mser(unsigned char *data, int width, int height) {
     float depth = 1;
-    int dark_on_bright = 1;
 
     bool err = false;
     char err_msg[1024];
 
     int exit_code = 0;
-    MserFilt *filt = 0;
     MserFilt *filtinv = 0;
 
     unsigned char *datainv = NULL;
@@ -1287,50 +1282,14 @@ int mser(unsigned char *data, int width, int height) {
     int nframes = 0, nframesinv = 0;
     int i, dof;
 
-    filt = mser_new(width, height);
     filtinv = mser_new(width, height);
 
-    if (!filt || !filtinv) {
+    if (!filtinv) {
         snprintf(err_msg, sizeof(err_msg), "Could not create an MSER filter.");
         goto done;
     }
 
-    if (dark_on_bright) {
-#ifdef DEBUG
-        clock_t start_time = clock();
-#endif
-        mser_process(filt, (unsigned char *) data);
-#ifdef DEBUG
-        double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-        printf("mser: elapsed %f ms\n", diff);
-#endif
-        /*
-        int   nregions = mser_get_regions_num(filt);
-        unsigned int const *   regions = mser_get_regions(filt);
-
-        printf("nregions: %d \t", nregions);
-
-        for (i = 0; i < nregions; ++i) {
-         printf(" %d \t", regions[i]);
-         }
-        */
-        mser_ell_fit(filt);
-
-        nframes = mser_get_ell_num(filt);
-        dof = mser_get_ell_dof(filt);
-
-        printf("dof: %d \t", dof);
-        printf("nframes: %d \t", nframes);
-        // Draw ellipses in the original image
-        const uint8_t colors[3] = {127, 127, 127};
-        for (int x = 0; x < 2; ++x) {
-            frames = mser_get_ell(filt);
-            for (i = 0; i < nframes; ++i) {
-                drawEllipse(frames, width, height, depth, data, colors);
-                frames += dof;
-            }
-        }
-    } else {
+    {
         // allocate buffer
         datainv = (unsigned char *) malloc(width * height * depth);
         for (i = 0; i < width * height * depth; i++) {
@@ -1346,22 +1305,20 @@ int mser(unsigned char *data, int width, int height) {
 #ifdef DEBUG
         clock_t start_time = clock();
 #endif
-        mser_process(filt, (unsigned char *)datainv);
+        mser_process(filtinv, (unsigned char *)datainv);
 #ifdef DEBUG
         double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
         printf("mser: elapsed %f ms\n", diff);
 #endif
 
-        /*
-         int  nregionsinv = mser_get_regions_num(filtinv);
-         unsigned int const *  regionsinv = mser_get_regions(filtinv);
+        int  nregionsinv = mser_get_regions_num(filtinv);
+        unsigned int const *  regionsinv = mser_get_regions(filtinv);
 
-         for (i = 0; i < nregionsinv; ++i) {
-         printf("%d \t ", -regionsinv[i]);
-         }
-        */
+        for (i = 0; i < nregionsinv; ++i) {
+            printf("%d \t ", -regionsinv[i]);
+        }
 
-        mser_ell_fit(filtinv);
+        /*mser_ell_fit(filtinv);
         nframesinv = mser_get_ell_num(filtinv);
         dof = mser_get_ell_dof(filtinv);
         const uint8_t colors[3] = {0, 0, 0};
@@ -1369,13 +1326,10 @@ int mser(unsigned char *data, int width, int height) {
         for (i = 0; i < nframesinv; ++i) {
             drawEllipse(framesinv, width, height, depth, data, colors);
             framesinv += dof;
-        }
+        }*/
     }
 done:
     // release filter
-    if (filt) {
-        mser_delete(filt);
-    }
     if (filtinv) {
         mser_delete(filtinv);
     }
