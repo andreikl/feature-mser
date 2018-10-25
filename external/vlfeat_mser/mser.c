@@ -212,16 +212,6 @@ struct _MserStats {
 };
 
 
-/** @} */
-
-
-/** @name Processing
-** @{
-**/
-void mser_process(MserFilt *f,
-                  unsigned char const *im);
-
-
 void mser_ell_fit(MserFilt *f);
 
 
@@ -349,64 +339,45 @@ struct _MserExtrReg {
 ** @brief MSER: extremal region */
 typedef struct _MserExtrReg MserExtrReg;
 
-/* ----------------------------------------------------------------- */
-
-
-/** @internal
-** @brief MSER filter
-** @see @ref mser
-**/
 struct _MserFilt {
-    /** @name Image data and meta data @internal */
-    /*@{*/
-    int ndims;          /**< number of dimensions                    */
-    int *dims;          /**< dimensions                              */
-    int nel;            /**< number of image elements (pixels)       */
-    int *subs;          /**< N-dimensional subscript                 */
-    int *dsubs;         /**< another subscript                       */
-    int *strides;       /**< strides to move in image data           */
-    /*@}*/
+    // Image data and meta data
+    int ndims;           // number of dimensions
+    int *dims;           // dimensions
+    int nel;             // number of image elements (pixels)
+    int *subs;           // N-dimensional subscript
+    int *dsubs;          // another subscript
+    int stride;          // stride to move in image data
 
-    unsigned int *perm;  /**< pixel ordering                          */
-    unsigned int *joins; /**< sequence of join ops                    */
-    int njoins; /**< number of join ops                      */
+    unsigned int *perm;  // pixel ordering
+    unsigned int *joins; // sequence of join ops
+    int njoins;          // number of join ops
 
-    /** @name Regions */
-    /*@{*/
-    MserReg *r;     /**< basic regions                           */
-    MserExtrReg *er;    /**< extremal tree                           */
-    unsigned int *mer;   /**< maximally stable extremal regions       */
-    int ner;    /**< number of extremal regions              */
-    int nmer;   /**< number of maximally stable extr. reg.   */
-    int rer;    /**< size of er buffer                       */
-    int rmer;   /**< size of mer buffer                      */
-    /*@}*/
+    // Regions
+    MserReg *r;         // basic regions
+    MserExtrReg *er;    // extremal tree
+    unsigned int *mer;  // maximally stable extremal regions
+    int ner;            // number of extremal regions
+    int nmer;           // number of maximally stable extr. reg.
+    int rer;            // size of er buffer
+    int rmer;           // size of mer buffer
 
-    /** @name Ellipsoids fitting */
-    /*@{*/
-    float *acc;           /**< moment accumulator.                    */
-    float *ell;           /**< ellipsoids list.                       */
-    int rell;           /**< size of ell buffer                     */
-    int nell;           /**< number of ellipsoids extracted         */
-    int dof;            /**< number of dof of ellipsoids.           */
+    // Ellipsoids fitting
+    float *acc;           // moment accumulator.
+    float *ell;           // ellipsoids list.
+    int rell;             // size of ell buffer
+    int nell;             // number of ellipsoids extracted
+    int dof;              // number of dof of ellipsoids.
 
-    /*@}*/
+    // Configuration
+    int verbose;          // be verbose
+    int delta;            // delta filter parameter
+    float max_area;       // badness test parameter
+    float min_area;       // badness test parameter
+    float max_variation;  // badness test parameter
+    float min_diversity;  // minimum diversity
 
-    /** @name Configuration */
-    /*@{*/
-    int verbose;        /**< be verbose                             */
-    int delta;          /**< delta filter parameter                 */
-    float max_area;       /**< badness test parameter                 */
-    float min_area;       /**< badness test parameter                 */
-    float max_variation;  /**< badness test parameter                 */
-    float min_diversity;  /**< minimum diversity                      */
-    /*@}*/
-
-    MserStats stats;        /** run statistic                           */
+    MserStats stats;      // run statistic
 };
-
-/* ----------------------------------------------------------------- */
-
 
 /** @brief Get statistics
 ** @param f MSER filter.
@@ -575,24 +546,19 @@ MserFilt* mser_new(int width, int height) {
     f->dims = (int*) malloc(sizeof(int) * f->ndims);
     f->subs = (int*) malloc(sizeof(int) * f->ndims);
     f->dsubs = (int*) malloc(sizeof(int) * f->ndims);
-    f->strides = (int*) malloc(sizeof(int) * f->ndims);
 
     // shortcuts
-    if (f->dims != NULL && f->subs != NULL && f->dsubs != NULL && f->strides != NULL) {
+    if (f->dims != NULL && f->subs != NULL && f->dsubs != NULL) {
         int k = 0;
 
         // copy dims to f->dims
         f->dims[0] = width;
         f->dims[1] = height;
 
-        // compute strides to move into the N-dimensional image array
-        f->strides[0] = 1;
-        for (k = 1; k < 2; ++k) {
-            f->strides[k] = f->strides[k - 1] * f->dims[k - 1];
-        }
+        f->stride = width;
 
         // total number of pixels
-        f->nel = f->strides[2 - 1] * f->dims[2 - 1];
+        f->nel = f->stride * height;
 
         // dof of ellipsoids
         f->dof = 2 * (2 + 1) / 2 + 2;
@@ -645,8 +611,6 @@ mser_delete(MserFilt *f) {
         if (f->perm)
             free(f->perm);
 
-        if (f->strides)
-            free(f->strides);
         if (f->dsubs)
             free(f->dsubs);
         if (f->subs)
@@ -687,7 +651,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
     int *dims = f->dims;
     int *subs = f->subs;
     int *dsubs = f->dsubs;
-    int *strides = f->strides;
     MserReg *r = f->r;
     MserExtrReg *er = f->er;
     unsigned int *mer = f->mer;
@@ -760,7 +723,7 @@ mser_process(MserFilt *f, unsigned char const *im) {
 
     /* process each pixel by increasing intensity */
     for (i = 0; i < (int) nel; ++i) {
-        /* pop next node xi */
+        // pop next node xi
         unsigned int idx = perm[i];
         unsigned char val = im[idx];
         unsigned int r_idx;
@@ -774,16 +737,22 @@ mser_process(MserFilt *f, unsigned char const *im) {
         r_idx = idx;
 
 
-        /* convert the index IDX into the subscript SUBS; also initialize
-        * DSUBS to (-1,-1,...,-1) */
+        // convert the index IDX into the subscript SUBS; also initialize DSUBS to (-1,-1,...,-1)
         {
             unsigned int temp = idx;
-            for (k = ndims - 1; k >= 0; --k) {
-                dsubs[k] = -1;
-                subs[k] = temp / strides[k];
-                temp = temp % strides[k];
-            }
+            dsubs[0] = -1;
+            dsubs[1] = -1;
+            
+            subs[0] = temp % f->stride; // x
+            subs[1] = temp / f->stride; // y
         }
+        //unsigned int temp = idx;
+        //for (k = ndims - 1; k >= 0; --k) {
+        //    dsubs[k] = -1;
+        //    subs[k] = temp / strides[k];
+        //    temp = temp % strides[k];
+        //}
+
 
         /* examine the neighbors of the current pixel */
         while (1) {
@@ -791,16 +760,23 @@ mser_process(MserFilt *f, unsigned char const *im) {
             int good = 1;
 
 
-            /*
-            * Compute the neighbor subscript as NSUBS+SUB, the
-            * corresponding neighbor index NINDEX and check that the
-            * neighbor is within the image domain.
-            */
-            for (k = 0; k < ndims && good; ++k) {
-                int temp = dsubs[k] + subs[k];
-                good &= (0 <= temp) && (temp < dims[k]);
-                n_idx += temp * strides[k];
+            // Compute the neighbor subscript as NSUBS+SUB, the
+            // corresponding neighbor index NINDEX and check that the
+            // neighbor is within the image domain.
+            {
+                int temp = dsubs[0] + subs[0];
+                good &= (0 <= temp) && (temp < dims[0]);
+                n_idx += temp;
+
+                temp = dsubs[1] + subs[1];
+                good &= (0 <= temp) && (temp < dims[1]);
+                n_idx += temp * f->stride;
             }
+            //for (k = 0; k < ndims && good; ++k) {
+            //    int temp = dsubs[k] + subs[k];
+            //    good &= (0 <= temp) && (temp < dims[k]);
+            //    n_idx += temp * strides[k];
+            //}
 
 
             /*
