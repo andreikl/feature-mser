@@ -27,8 +27,8 @@ int read_int_value(const char name[], int def_value) {
     return def_value;
 }
 
-char* read_file(const char* path, int* size) {
-    char buffer[BUFFER_SIZE];
+unsigned char* read_file(const char* path, int* size) {
+    unsigned char buffer[BUFFER_SIZE];
     FILE* fstream;
     size_t read;
 
@@ -43,7 +43,7 @@ char* read_file(const char* path, int* size) {
         fstream = fopen(path, "r");
     }
 
-    char* data = NULL; *size = 0;
+    unsigned char* data = NULL; *size = 0;
     do {
         read = fread(buffer, sizeof(buffer[0]), BUFFER_SIZE, fstream);
         if (read > 0) {

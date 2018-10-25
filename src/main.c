@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         int height = read_int_value(HEIGHT, HEIGHT_DEF);
 
         int input_size;
-        char* input_data = read_file(input_file, &input_size);
+        unsigned char* input_data = read_file(input_file, &input_size);
 
         mser(input_data, width, height);
 
