@@ -345,7 +345,6 @@ struct _MserFilt {
     int *dims;           // dimensions
     int nel;             // number of image elements (pixels)
     int *subs;           // N-dimensional subscript
-    int *dsubs;          // another subscript
     int stride;          // stride to move in image data
 
     unsigned int *perm;  // pixel ordering
@@ -469,6 +468,7 @@ void adv(int ndims, int const *dims, int *subs) {
 }
 
 
+// works faster??? 1.5s
 /** -------------------------------------------------------------------
 ** @brief Climb the region forest to reach aa root
 **
@@ -483,48 +483,63 @@ void adv(int ndims, int const *dims, int *subs) {
 ** @param idx stating node.
 ** @return index of the reached root.
 **/
-
-unsigned int climb(MserReg *r, unsigned int idx) {
+/*unsigned int climb(MserReg *r, unsigned int idx) {
     unsigned int prev_idx = idx;
     unsigned int next_idx;
     unsigned int root_idx;
 
-    /* move towards root to find it */
+    // move towards root to find it
     while (1) {
-        /* next jump to the root */
+        // next jump to the root
         next_idx = r[idx].shortcut;
 
-        /* recycle shortcut to remember how we came here */
+        // recycle shortcut to remember how we came here
         r[idx].shortcut = prev_idx;
 
-        /* stop if the root is found */
+        // stop if the root is found
         if (next_idx == idx)
             break;
 
-        /* next guy */
+        // next guy
         prev_idx = idx;
         idx = next_idx;
     }
 
     root_idx = idx;
 
-    /* move backward to update shortcuts */
+    // move backward to update shortcuts
     while (1) {
-        /* get previously visited one */
+        // get previously visited one
         prev_idx = r[idx].shortcut;
 
-        /* update shortcut to point to the new root */
+        // update shortcut to point to the new root
         r[idx].shortcut = root_idx;
 
-        /* stop if the first visited node is reached */
+        // stop if the first visited node is reached
         if (prev_idx == idx)
             break;
 
-        /* next guy */
+        // next guy
         idx = prev_idx;
     }
 
     return (root_idx);
+}*/
+
+// find the root and optimise path
+unsigned int find(MserReg *r, unsigned int idx) {
+    unsigned int next_idx;
+
+    // move towards root to find it
+    while (r[idx].shortcut != idx) {
+        // get parent
+        next_idx = r[idx].shortcut;
+        // optimize current parrent to point directly to next parent
+        r[idx].shortcut = r[next_idx].shortcut;
+        // move to next node
+        idx = next_idx;
+    }
+    return idx;
 }
 
 
@@ -545,10 +560,9 @@ MserFilt* mser_new(int width, int height) {
     f->ndims = 2;
     f->dims = (int*) malloc(sizeof(int) * f->ndims);
     f->subs = (int*) malloc(sizeof(int) * f->ndims);
-    f->dsubs = (int*) malloc(sizeof(int) * f->ndims);
 
     // shortcuts
-    if (f->dims != NULL && f->subs != NULL && f->dsubs != NULL) {
+    if (f->dims != NULL && f->subs != NULL) {
         // copy dims to f->dims
         f->dims[0] = width;
         f->dims[1] = height;
@@ -609,8 +623,6 @@ mser_delete(MserFilt *f) {
         if (f->perm)
             free(f->perm);
 
-        if (f->dsubs)
-            free(f->dsubs);
         if (f->subs)
             free(f->subs);
         if (f->dims)
@@ -648,7 +660,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
     int ndims = f->ndims;
     int *dims = f->dims;
     int *subs = f->subs;
-    int *dsubs = f->dsubs;
     MserReg *r = f->r;
     MserExtrReg *er = f->er;
     unsigned int *mer = f->mer;
@@ -662,7 +673,7 @@ mser_process(MserFilt *f, unsigned char const *im) {
     int nbad = 0;
     int ndup = 0;
 
-    int i, j, k;
+    int i, j;
 
     /* delete any previosuly computed ellipsoid */
     f->nell = 0;
@@ -709,72 +720,51 @@ mser_process(MserFilt *f, unsigned char const *im) {
     * -------------------------------------------------------------- */
 
 
-    /*
-    * In the following:
-    * idx    : index of the current pixel
-    * val    : intensity of the current pixel
-    * r_idx  : index of the root of the current pixel
-    * n_idx  : index of the neighbors of the current pixel
-    * nr_idx : index of the root of the neighbor of the current pixel
-    */
-
-    /* process each pixel by increasing intensity */
-    for (i = 0; i < (int) nel; ++i) {
-        // pop next node xi
+    // nr_idx : index of the root of the neighbor of the current pixel
+    // process each pixel
+    for (i = 0; i < nel; i++) {
+        // index of the current pixel
         unsigned int idx = perm[i];
+        // intensity of the current pixel
         unsigned char val = im[idx];
-        unsigned int r_idx;
+        // index of the root of the current pixel
+        unsigned int r_idx = idx;
 
-        /* add the pixel to the forest as a root for now */
+        // add the pixel to the forest as a root for now
         r[idx].parent = idx;
         r[idx].shortcut = idx;
         r[idx].area = 1;
         r[idx].height = 1;
 
-        r_idx = idx;
+        // neighbor index subscript
+        int dsubx = -1;
+        int dsuby = -1;
 
-
-        // convert the index IDX into the subscript SUBS; also initialize DSUBS to (-1,-1,...,-1)
+        // convert the index IDX into the ; also initialize DSUBS to (-1,-1,...,-1)
+        unsigned int temp = idx;
         {
-            unsigned int temp = idx;
-            dsubs[0] = -1;
-            dsubs[1] = -1;
-            
             subs[0] = temp % f->stride; // x
             subs[1] = temp / f->stride; // y
         }
-        //unsigned int temp = idx;
-        //for (k = ndims - 1; k >= 0; --k) {
-        //    dsubs[k] = -1;
-        //    subs[k] = temp / strides[k];
-        //    temp = temp % strides[k];
-        //}
 
-
-        /* examine the neighbors of the current pixel */
+        // examine the neighbors of the current pixel
         while (1) {
+            // n_idx: index of the neighbors of the current pixel
             unsigned int n_idx = 0;
             int good = 1;
-
 
             // Compute the neighbor subscript as NSUBS+SUB, the
             // corresponding neighbor index NINDEX and check that the
             // neighbor is within the image domain.
             {
-                int temp = dsubs[0] + subs[0];
+                int temp = dsubx + subs[0];
                 good &= (0 <= temp) && (temp < dims[0]);
                 n_idx += temp;
 
-                temp = dsubs[1] + subs[1];
+                temp = dsuby + subs[1];
                 good &= (0 <= temp) && (temp < dims[1]);
                 n_idx += temp * f->stride;
             }
-            //for (k = 0; k < ndims && good; ++k) {
-            //    int temp = dsubs[k] + subs[k];
-            //    good &= (0 <= temp) && (temp < dims[k]);
-            //    n_idx += temp * strides[k];
-            //}
-
 
             /*
             * The neighbor should be processed if the following conditions
@@ -794,17 +784,9 @@ mser_process(MserFilt *f, unsigned char const *im) {
                 int n_hgt = r[nr_idx].height;
 
 
-                /*
-                * Now we join the two subtrees rooted at
-                * R_IDX = ROOT(  IDX)
-                * NR_IDX = ROOT(N_IDX).
-                * Note that R_IDX = ROOT(IDX) might change as we process more
-                * neighbors, so we need keep updating it.
-                */
-
-                r_idx = climb(r, idx);
-                nr_idx = climb(r, n_idx);
-
+                // get roots and optimise path
+                r_idx = find(r, idx);
+                nr_idx = find(r, n_idx);
 
                 /*
                 * At this point we have three possibilities:
@@ -853,13 +835,21 @@ mser_process(MserFilt *f, unsigned char const *im) {
                 }               /* check a vs b or c */
             }                       /* neighbor done */
 
-            /* move to next neighbor */
-            k = 0;
+            // move to next neighbor */
+            /*k = 0;
             while (++dsubs[k] > 1) {
                 dsubs[k++] = -1;
                 if (k == ndims)
                     goto done_all_neighbors;
+            }*/
+            if (++dsubx > 1 && dsuby == 1) {
+                goto done_all_neighbors;
             }
+            if (dsubx > 1) {
+                dsubx = -1;
+                dsuby++;
+            }
+
         } /* next neighbor */
         done_all_neighbors:;
     }        /* next pixel */
