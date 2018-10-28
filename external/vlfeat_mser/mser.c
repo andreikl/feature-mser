@@ -289,7 +289,7 @@ typedef float mser_acc;
 struct _MserReg {
     unsigned int parent;         /**< points to the parent region.            */
     unsigned int shortcut;       /**< points to a region closer to a root.    */
-    unsigned int height;         /**< region height in the forest.            */
+    unsigned int height;         // height of the region tree
     unsigned int area;           /**< area of the region.                     */
 };
 
@@ -344,7 +344,6 @@ struct _MserFilt {
     int ndims;           // number of dimensions
     int *dims;           // dimensions
     int nel;             // number of image elements (pixels)
-    int *subs;           // N-dimensional subscript
     int stride;          // stride to move in image data
 
     unsigned int *perm;  // pixel ordering
@@ -559,10 +558,9 @@ MserFilt* mser_new(int width, int height) {
     MserFilt *f = (MserFilt *) calloc(sizeof(MserFilt), 1);
     f->ndims = 2;
     f->dims = (int*) malloc(sizeof(int) * f->ndims);
-    f->subs = (int*) malloc(sizeof(int) * f->ndims);
 
     // shortcuts
-    if (f->dims != NULL && f->subs != NULL) {
+    if (f->dims != NULL) {
         // copy dims to f->dims
         f->dims[0] = width;
         f->dims[1] = height;
@@ -623,8 +621,6 @@ mser_delete(MserFilt *f) {
         if (f->perm)
             free(f->perm);
 
-        if (f->subs)
-            free(f->subs);
         if (f->dims)
             free(f->dims);
 
@@ -659,7 +655,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
     unsigned int *joins = f->joins;
     int ndims = f->ndims;
     int *dims = f->dims;
-    int *subs = f->subs;
     MserReg *r = f->r;
     MserExtrReg *er = f->er;
     unsigned int *mer = f->mer;
@@ -714,12 +709,8 @@ mser_process(MserFilt *f, unsigned char const *im) {
         r[i].parent = MSER_VOID_NODE;
     }
 
-
-    /* -----------------------------------------------------------------
-    *                        Compute regions and count extremal regions
-    * -------------------------------------------------------------- */
-
-
+    int dsubx, dsuby, subsx, subsy, hgt, n_hgt;
+    // Compute regions and count extremal regions
     // nr_idx : index of the root of the neighbor of the current pixel
     // process each pixel
     for (i = 0; i < nel; i++) {
@@ -737,18 +728,76 @@ mser_process(MserFilt *f, unsigned char const *im) {
         r[idx].height = 1;
 
         // neighbor index subscript
-        int dsubx = -1;
-        int dsuby = -1;
+        dsubx = -1;
+        dsuby = -1;
+        subsx = idx % f->stride;
+        subsy = idx / f->stride;
+        for (int dy = subsy - 1; dy <= subsy + 1; dy++) {
+            for (int dx = subsx - 1; dx <= subsx + 1; dx++) {
+                if (dx >= 0 && dx < dims[0] && dy >= 0 && dy < dims[1]) {
+                    unsigned int n_idx = dy * f->stride + dx;
+                    if (n_idx == idx || r[n_idx].parent == MSER_VOID_NODE)
+                        continue;
 
-        // convert the index IDX into the ; also initialize DSUBS to (-1,-1,...,-1)
-        unsigned int temp = idx;
-        {
-            subs[0] = temp % f->stride; // x
-            subs[1] = temp / f->stride; // y
+#ifdef DEBUG
+                    if (subsx == DEBUG_X && subsy == DEBUG_Y) {
+                        printf("ndx: %d\n", n_idx);
+                    }
+#endif
+
+                    unsigned char nr_val = 0;
+                    unsigned int nr_idx = 0;
+
+
+                    // get roots and optimise path
+                    r_idx = find(r, idx);
+                    nr_idx = find(r, n_idx);
+
+                    // r_idx and nr_idx are already in the same set
+                    if (r_idx == nr_idx)
+                        continue;
+
+                    // (B) I(ROOT(IDX)) == I(ROOT(NR_IDX)). In this case the pixel
+                    // IDX is extending an extremal region with the same
+                    // intensity value. Since ROOT(NR_IDX) will NOT be an
+                    // extremal region of the full image, ROOT(IDX) can be
+                    // safely added as children of ROOT(NR_IDX) if this
+                    // reduces the height according to the union rank
+                    // heuristic.
+                    // (C) I(ROOT(IDX)) > I(ROOT(NR_IDX)). In this case the pixel
+                    // IDX is starting a new extremal region. Thus ROOT(NR_IDX)
+                    // WILL be an extremal region of the final image and the
+                    // only possibility is to add ROOT(NR_IDX) as children of
+                    // ROOT(IDX), which becomes parent.
+                    nr_val = im[nr_idx];
+                    if (nr_val == val) {
+                        // ROOT(IDX) becomes the child
+                        r[r_idx].parent = nr_idx;
+                        r[r_idx].shortcut = nr_idx;
+                        r[nr_idx].area += r[r_idx].area;
+                        r[nr_idx].height = MAX(r[nr_idx].height, r[r_idx].height + 1);
+
+                        joins[njoins++] = r_idx;
+                    }
+                    else {
+                        // cases ROOT(IDX) becomes the parent
+                        r[nr_idx].parent = r_idx;
+                        r[nr_idx].shortcut = r_idx;
+                        r[r_idx].area += r[nr_idx].area;
+                        r[r_idx].height = MAX(hgt, n_hgt + 1);
+
+                        joins[njoins++] = nr_idx;
+
+                        // count if extremal
+                        if (nr_val != val)
+                            ++ner;
+                    }
+                }
+            }
         }
 
         // examine the neighbors of the current pixel
-        while (1) {
+        /*while (1) {
             // n_idx: index of the neighbors of the current pixel
             unsigned int n_idx = 0;
             int good = 1;
@@ -757,24 +806,22 @@ mser_process(MserFilt *f, unsigned char const *im) {
             // corresponding neighbor index NINDEX and check that the
             // neighbor is within the image domain.
             {
-                int temp = dsubx + subs[0];
+                int temp = dsubx + subsx;
                 good &= (0 <= temp) && (temp < dims[0]);
                 n_idx += temp;
 
-                temp = dsuby + subs[1];
+                temp = dsuby + subsy;
                 good &= (0 <= temp) && (temp < dims[1]);
                 n_idx += temp * f->stride;
             }
 
-            /*
-            * The neighbor should be processed if the following conditions
-            * are met:
-            * 1. The neighbor is within image boundaries.
-            * 2. The neighbor is indeed different from the current node
-            * (the opposite happens when DSUB=(0,0,...,0)).
-            * 3. The neighbor is already in the forest, meaning that it has
-            * already been processed.
-            */
+            // The neighbor should be processed if the following conditions
+            // are met:
+            // 1. The neighbor is within image boundaries.
+            // 2. The neighbor is indeed different from the current node
+            // (the opposite happens when DSUB=(0,0,...,0)).
+            // 3. The neighbor is already in the forest, meaning that it has
+            // already been processed.
             if (good &&
                 n_idx != idx &&
                 r[n_idx].parent != MSER_VOID_NODE) {
@@ -788,31 +835,27 @@ mser_process(MserFilt *f, unsigned char const *im) {
                 r_idx = find(r, idx);
                 nr_idx = find(r, n_idx);
 
-                /*
-                * At this point we have three possibilities:
-                * (A) ROOT(IDX) == ROOT(NR_IDX). In this case the two trees
-                * have already been joined and we do not do anything.
-                * (B) I(ROOT(IDX)) == I(ROOT(NR_IDX)). In this case the pixel
-                * IDX is extending an extremal region with the same
-                * intensity value. Since ROOT(NR_IDX) will NOT be an
-                * extremal region of the full image, ROOT(IDX) can be
-                * safely added as children of ROOT(NR_IDX) if this
-                * reduces the height according to the union rank
-                * heuristic.
-                * (C) I(ROOT(IDX)) > I(ROOT(NR_IDX)). In this case the pixel
-                * IDX is starting a new extremal region. Thus ROOT(NR_IDX)
-                * WILL be an extremal region of the final image and the
-                * only possibility is to add ROOT(NR_IDX) as children of
-                * ROOT(IDX), which becomes parent.
-                */
-
-                if (r_idx != nr_idx) /* skip if (A) */
-
+                // At this point we have three possibilities:
+                // (A) ROOT(IDX) == ROOT(NR_IDX). In this case the two trees
+                // have already been joined and we do not do anything.
+                // (B) I(ROOT(IDX)) == I(ROOT(NR_IDX)). In this case the pixel
+                // IDX is extending an extremal region with the same
+                // intensity value. Since ROOT(NR_IDX) will NOT be an
+                // extremal region of the full image, ROOT(IDX) can be
+                // safely added as children of ROOT(NR_IDX) if this
+                // reduces the height according to the union rank
+                // heuristic.
+                // (C) I(ROOT(IDX)) > I(ROOT(NR_IDX)). In this case the pixel
+                // IDX is starting a new extremal region. Thus ROOT(NR_IDX)
+                // WILL be an extremal region of the final image and the
+                // only possibility is to add ROOT(NR_IDX) as children of
+                // ROOT(IDX), which becomes parent.
+                if (r_idx != nr_idx) // skip if (A)
                 {
                     nr_val = im[nr_idx];
 
                     if (nr_val == val && hgt < n_hgt) {
-                        /* ROOT(IDX) becomes the child */
+                        // ROOT(IDX) becomes the child
                         r[r_idx].parent = nr_idx;
                         r[r_idx].shortcut = nr_idx;
                         r[nr_idx].area += r[r_idx].area;
@@ -820,7 +863,7 @@ mser_process(MserFilt *f, unsigned char const *im) {
 
                         joins[njoins++] = r_idx;
                     } else {
-                        /* cases ROOT(IDX) becomes the parent */
+                        // cases ROOT(IDX) becomes the parent
                         r[nr_idx].parent = r_idx;
                         r[nr_idx].shortcut = r_idx;
                         r[r_idx].area += r[nr_idx].area;
@@ -828,20 +871,20 @@ mser_process(MserFilt *f, unsigned char const *im) {
 
                         joins[njoins++] = nr_idx;
 
-                        /* count if extremal */
+                        // count if extremal
                         if (nr_val != val)
                             ++ner;
-                    }       /* check b vs c */
-                }               /* check a vs b or c */
-            }                       /* neighbor done */
+                    }
+                }
+            }
 
-            // move to next neighbor */
-            /*k = 0;
-            while (++dsubs[k] > 1) {
-                dsubs[k++] = -1;
-                if (k == ndims)
-                    goto done_all_neighbors;
-            }*/
+            // move to next neighbor
+            //k = 0;
+            //while (++dsubs[k] > 1) {
+            //    dsubs[k++] = -1;
+            //    if (k == ndims)
+            //        goto done_all_neighbors;
+            //}
             if (++dsubx > 1 && dsuby == 1) {
                 goto done_all_neighbors;
             }
@@ -849,10 +892,9 @@ mser_process(MserFilt *f, unsigned char const *im) {
                 dsubx = -1;
                 dsuby++;
             }
-
-        } /* next neighbor */
-        done_all_neighbors:;
-    }        /* next pixel */
+        }
+done_all_neighbors:;*/
+    } // next pixel
 
     /* the last root is extremal too */
     ++ner;
@@ -1129,19 +1171,9 @@ mser_process(MserFilt *f, unsigned char const *im) {
     }
 }
 
-
-/** -------------------------------------------------------------------
-** @brief Fit ellipsoids
-**
-** @param f MSER filter.
-**
-** @sa @ref mser-ell
-**/
-
-
-void
-mser_ell_fit(MserFilt *f) {
-    /* shortcuts */
+//  Fit ellipsoids
+/*void mser_ell_fit(MserFilt *f) {
+    // shortcuts
     int nel = f->nel;
     int dof = f->dof;
     int *dims = f->dims;
@@ -1157,11 +1189,11 @@ mser_ell_fit(MserFilt *f) {
 
     int d, index, i, j;
 
-    /* already fit ? */
+    // already fit ?
     if (f->nell == f->nmer)
         return;
 
-    /* make room */
+    // make room
     if (f->rell < f->nmer) {
         if (f->ell)
             free(f->ell);
@@ -1177,59 +1209,49 @@ mser_ell_fit(MserFilt *f) {
     ell = f->ell;
 
 
-    /* -----------------------------------------------------------------
-    *                                                 Integrate moments
-    * -------------------------------------------------------------- */
-
-    /* for each dof */
+    // Integrate moments for each dof
     for (d = 0; d < f->dof; ++d) {
-        /* start from the upper-left pixel (0,0,...,0) */
+        // start from the upper-left pixel (0,0,...,0)
         memset(subs, 0, sizeof(int) * ndims);
 
-        /* step 1: fill acc pretending that each region has only one pixel */
+        // step 1: fill acc pretending that each region has only one pixel
         if (d < ndims) {
-            /* 1-order ................................................... */
-
+            // 1-order
             for (index = 0; index < nel; ++index) {
                 acc[index] = (float) subs[d];
                 adv(ndims, dims, subs);
             }
         } else {
-            /* 2-order ................................................... */
-
-            /* map the dof d to a second order moment E[x_i x_j] */
+            // 2-order
+            // map the dof d to a second order moment E[x_i x_j]
             i = d - ndims;
             j = 0;
             while (i > j) {
                 i -= j + 1;
                 j++;
             }
-            /* initialize acc with  x_i * x_j */
+            // initialize acc with  x_i * x_j
             for (index = 0; index < nel; ++index) {
                 acc[index] = (float) (subs[i] * subs[j]);
                 adv(ndims, dims, subs);
             }
         }
 
-        /* step 2: integrate */
+        // step 2: integrate
         for (i = 0; i < njoins; ++i) {
             unsigned int index = joins[i];
             unsigned int parent = r[index].parent;
             acc[parent] += acc[index];
         }
 
-        /* step 3: save back to ellpises */
+        // step 3: save back to ellpises
         for (i = 0; i < nmer; ++i) {
             unsigned int idx = mer[i];
             ell[d + dof * i] = acc[idx];
         }
-    } /* next dof */
+    }
 
-
-    /* -----------------------------------------------------------------
-    *                                           Compute central moments
-    * -------------------------------------------------------------- */
-
+    // Compute central moments
     for (index = 0; index < nmer; ++index) {
         float *pt = ell + index * dof;
         unsigned int idx = mer[index];
@@ -1239,7 +1261,7 @@ mser_ell_fit(MserFilt *f) {
             pt[d] /= area;
 
             if (d >= ndims) {
-                /* remove squared mean from moment to get variance */
+                // remove squared mean from moment to get variance
                 i = d - ndims;
                 j = 0;
                 while (i > j) {
@@ -1251,15 +1273,10 @@ mser_ell_fit(MserFilt *f) {
         }
     }
 
-    /* save back */
     f->nell = nmer;
-}
-
-
+}*/
 
 int mser(unsigned char *data, int width, int height) {
-    float depth = 1;
-
     bool err = false;
     char err_msg[1024];
 
@@ -1279,53 +1296,48 @@ int mser(unsigned char *data, int width, int height) {
         goto done;
     }
 
-    {
-        // allocate buffer
-        datainv = (unsigned char *) malloc(width * height * depth);
-        for (i = 0; i < width * height * depth; i++) {
-            datainv[i] = ~data[i]; // 255 - data[i]
-        }
-
-        if (!datainv) {
-            err = false;
-            snprintf(err_msg, sizeof(err_msg), "Could not allocate enough memory.");
-            goto done;
-        }
-
-#ifdef DEBUG
-        clock_t start_time = clock();
-#endif
-        mser_process(filtinv, (unsigned char *)datainv);
-#ifdef DEBUG
-        double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
-        printf("mser: elapsed %f ms\n", diff);
-#endif
-
-        int  nregionsinv = mser_get_regions_num(filtinv);
-        unsigned int const *  regionsinv = mser_get_regions(filtinv);
-
-        for (i = 0; i < nregionsinv; ++i) {
-            printf("%d \t ", -regionsinv[i]);
-        }
-
-        /*mser_ell_fit(filtinv);
-        nframesinv = mser_get_ell_num(filtinv);
-        dof = mser_get_ell_dof(filtinv);
-        const uint8_t colors[3] = {0, 0, 0};
-        framesinv = mser_get_ell(filtinv);
-        for (i = 0; i < nframesinv; ++i) {
-            drawEllipse(framesinv, width, height, depth, data, colors);
-            framesinv += dof;
-        }*/
+    // allocate buffer
+    datainv = (unsigned char *) malloc(width * height);
+    for (i = 0; i < width * height; i++) {
+        datainv[i] = ~data[i]; // 255 - data[i]
     }
+
+    if (!datainv) {
+        err = false;
+        snprintf(err_msg, sizeof(err_msg), "Could not allocate enough memory.");
+        goto done;
+    }
+
+#ifdef DEBUG
+    clock_t start_time = clock();
+#endif
+    mser_process(filtinv, (unsigned char *)datainv);
+#ifdef DEBUG
+    double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    printf("mser: elapsed %f s\n", diff);
+#endif
+
+    int  nregionsinv = mser_get_regions_num(filtinv);
+    unsigned int const *  regionsinv = mser_get_regions(filtinv);
+
+    for (i = 0; i < nregionsinv; ++i) {
+        printf("%d \t ", -regionsinv[i]);
+    }
+
+    /*mser_ell_fit(filtinv);
+    nframesinv = mser_get_ell_num(filtinv);
+    dof = mser_get_ell_dof(filtinv);
+    const uint8_t colors[3] = {0, 0, 0};
+    framesinv = mser_get_ell(filtinv);
+    for (i = 0; i < nframesinv; ++i) {
+        drawEllipse(framesinv, width, height, depth, data, colors);
+        framesinv += dof;
+    }*/
+
 done:
     // release filter
     if (filtinv) {
         mser_delete(filtinv);
-    }
-    //release image data
-    if (data) {
-        free(data);
     }
     if (datainv) {
         free(datainv);
