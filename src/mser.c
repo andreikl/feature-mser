@@ -527,16 +527,16 @@ void adv(int ndims, int const *dims, int *subs) {
 
 // find the root and optimise path
 unsigned int find(MserReg *r, unsigned int idx) {
-    unsigned int next_idx;
+    unsigned int next_idx = r[idx].shortcut;
 
     // move towards root to find it
-    while (r[idx].shortcut != idx) {
-        // get parent
-        next_idx = r[idx].shortcut;
-        // optimize current parrent to point directly to next parent
+    while (next_idx != idx) {
+        // optimize current parrent points directly to next parent
         r[idx].shortcut = r[next_idx].shortcut;
         // move to next node
         idx = next_idx;
+        // get parent
+        next_idx = r[idx].shortcut;
     }
     return idx;
 }
@@ -713,7 +713,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
     unsigned char val, nr_val;
 
     // Compute regions and count extremal regions
-    // nr_idx : index of the root of the neighbor of the current pixel
     // process each pixel
     for (i = 0; i < nel; i++) {
         // index of the current pixel
@@ -747,10 +746,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
 //                    }
 //#endif
 
-                    unsigned char nr_val = 0;
-                    unsigned int nr_idx = 0;
-
-
                     // get roots and optimise path
                     r_idx = find(r, idx);
                     nr_idx = find(r, n_idx);
@@ -772,114 +767,15 @@ mser_process(MserFilt *f, unsigned char const *im) {
                 }
             }
         }
-
-        // examine the neighbors of the current pixel
-        /*while (1) {
-            // n_idx: index of the neighbors of the current pixel
-            unsigned int n_idx = 0;
-            int good = 1;
-
-            // Compute the neighbor subscript as NSUBS+SUB, the
-            // corresponding neighbor index NINDEX and check that the
-            // neighbor is within the image domain.
-            {
-                int temp = dsubx + subsx;
-                good &= (0 <= temp) && (temp < dims[0]);
-                n_idx += temp;
-
-                temp = dsuby + subsy;
-                good &= (0 <= temp) && (temp < dims[1]);
-                n_idx += temp * f->stride;
-            }
-
-            // The neighbor should be processed if the following conditions
-            // are met:
-            // 1. The neighbor is within image boundaries.
-            // 2. The neighbor is indeed different from the current node
-            // (the opposite happens when DSUB=(0,0,...,0)).
-            // 3. The neighbor is already in the forest, meaning that it has
-            // already been processed.
-            if (good &&
-                n_idx != idx &&
-                r[n_idx].parent != MSER_VOID_NODE) {
-                unsigned char nr_val = 0;
-                unsigned int nr_idx = 0;
-                int hgt = r[r_idx].height;
-                int n_hgt = r[nr_idx].height;
-
-
-                // get roots and optimise path
-                r_idx = find(r, idx);
-                nr_idx = find(r, n_idx);
-
-                // At this point we have three possibilities:
-                // (A) ROOT(IDX) == ROOT(NR_IDX). In this case the two trees
-                // have already been joined and we do not do anything.
-                // (B) I(ROOT(IDX)) == I(ROOT(NR_IDX)). In this case the pixel
-                // IDX is extending an extremal region with the same
-                // intensity value. Since ROOT(NR_IDX) will NOT be an
-                // extremal region of the full image, ROOT(IDX) can be
-                // safely added as children of ROOT(NR_IDX) if this
-                // reduces the height according to the union rank
-                // heuristic.
-                // (C) I(ROOT(IDX)) > I(ROOT(NR_IDX)). In this case the pixel
-                // IDX is starting a new extremal region. Thus ROOT(NR_IDX)
-                // WILL be an extremal region of the final image and the
-                // only possibility is to add ROOT(NR_IDX) as children of
-                // ROOT(IDX), which becomes parent.
-                if (r_idx != nr_idx) // skip if (A)
-                {
-                    nr_val = im[nr_idx];
-
-                    if (nr_val == val && hgt < n_hgt) {
-                        // ROOT(IDX) becomes the child
-                        r[r_idx].parent = nr_idx;
-                        r[r_idx].shortcut = nr_idx;
-                        r[nr_idx].area += r[r_idx].area;
-                        r[nr_idx].height = MAX(n_hgt, hgt + 1);
-
-                        joins[njoins++] = r_idx;
-                    } else {
-                        // cases ROOT(IDX) becomes the parent
-                        r[nr_idx].parent = r_idx;
-                        r[nr_idx].shortcut = r_idx;
-                        r[r_idx].area += r[nr_idx].area;
-                        r[r_idx].height = MAX(hgt, n_hgt + 1);
-
-                        joins[njoins++] = nr_idx;
-
-                        // count if extremal
-                        if (nr_val != val)
-                            ++ner;
-                    }
-                }
-            }
-
-            // move to next neighbor
-            //k = 0;
-            //while (++dsubs[k] > 1) {
-            //    dsubs[k++] = -1;
-            //    if (k == ndims)
-            //        goto done_all_neighbors;
-            //}
-            if (++dsubx > 1 && dsuby == 1) {
-                goto done_all_neighbors;
-            }
-            if (dsubx > 1) {
-                dsubx = -1;
-                dsuby++;
-            }
-        }
-done_all_neighbors:;*/
     } // next pixel
 
-    /* the last root is extremal too */
-    ++ner;
+    //the last root is extremal too
+    /*++ner;
 
-    /* save back */
+    //save back
     f->njoins = njoins;
 
-    f->stats.num_extremal = ner;
+    f->stats.num_extremal = ner;*/
 
 
     /* -----------------------------------------------------------------
