@@ -741,11 +741,11 @@ mser_process(MserFilt *f, unsigned char const *im) {
                     if (n_idx == idx || r[n_idx].parent == MSER_VOID_NODE)
                         continue;
 
-#ifdef DEBUG
-                    if (subsx == DEBUG_X && subsy == DEBUG_Y) {
-                        printf("ndx: %d\n", n_idx);
-                    }
-#endif
+//#ifdef DEBUG
+//                    if (subsx == DEBUG_X && subsy == DEBUG_Y) {
+//                        printf("ndx: %d\n", n_idx);
+//                    }
+//#endif
 
                     unsigned char nr_val = 0;
                     unsigned int nr_idx = 0;
