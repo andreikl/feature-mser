@@ -120,7 +120,6 @@ struct _MserData {
 
     MserPixel* image;     // sorted by intensity image data
 
-    unsigned int *perm;  // pixel ordering
     unsigned int *joins; // sequence of join ops
     int njoins;          // number of join ops
 
@@ -558,11 +557,12 @@ MserData* mser_new(int width, int height) {
         // total number of pixels
         f->nel = f->stride * height;
 
+        f->image = (unsigned int *)malloc(sizeof(MserPixel) * f->nel);
+
         // dof of ellipsoids
         f->dof = 2 * (2 + 1) / 2 + 2;
 
         // more buffers
-        f->perm = (unsigned int *) malloc(sizeof(unsigned int) * f->nel);
         f->joins = (unsigned int *) malloc(sizeof(unsigned int) * f->nel);
         f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
 
@@ -606,11 +606,12 @@ mser_delete(MserData *f) {
             free(f->r);
         if (f->joins)
             free(f->joins);
-        if (f->perm)
-            free(f->perm);
 
         if (f->dims)
             free(f->dims);
+
+        if (f->image)
+            free(f->image);
 
         if (f->mer)
             free(f->mer);
@@ -621,6 +622,13 @@ mser_delete(MserData *f) {
 
 #define MAX(x, y) ( ( (x) > (y) ) ? (x) : (y) )
 
+int comp(const void* x, const void* y) {
+    MserPixel* vx = (MserPixel*)x;
+    MserPixel* vy = (MserPixel*)y;
+    if (vx->intensity > vy->intensity) return  1;
+    if (vx->intensity < vy->intensity) return -1;
+    return 0;
+}
 
 /** -------------------------------------------------------------------
 ** @brief Process image
@@ -635,15 +643,14 @@ mser_delete(MserData *f) {
 ** @param im image data.
 **/
 
-void
-mser_process(MserData *f, unsigned char const *im) {
+void mser_process(MserData *f, unsigned char const *im) {
     /* shortcuts */
     unsigned int nel = f->nel;
-    unsigned int *perm = f->perm;
     unsigned int *joins = f->joins;
     int ndims = f->ndims;
     int *dims = f->dims;
     MserReg *r = f->r;
+    MserPixel* image = f->image;
     MserExtrReg *er = f->er;
     unsigned int *mer = f->mer;
     int delta = f->delta;
@@ -661,38 +668,15 @@ mser_process(MserData *f, unsigned char const *im) {
     unsigned char val, nr_val;
 
     /* delete any previosuly computed ellipsoid */
-    f->nell = 0;
+    //f->nell = 0;
 
-
-    /* -----------------------------------------------------------------
-    *                                          Sort pixels by intensity
-    * -------------------------------------------------------------- */
-
-    {
-        unsigned int buckets[MSER_PIX_MAXVAL];
-
-        /* clear buckets */
-        memset(buckets, 0, sizeof(unsigned int) * MSER_PIX_MAXVAL);
-
-
-        //compute bucket size (how many pixels for each intensity value)
-        for (i = 0; i < (int) nel; ++i) {
-            unsigned char v = im[i];
-            ++buckets[v];
-        }
-
-        /* cumulatively add bucket sizes */
-        for (i = 1; i < MSER_PIX_MAXVAL; ++i) {
-            buckets[i] += buckets[i - 1];
-        }
-
-        /* empty buckets computing pixel ordering */
-        for (i = nel; i >= 1;) {
-            unsigned char v = im[--i];
-            unsigned int j = --buckets[v];
-            perm[j] = i;
-        }
+    // Sort pixels by intensity -----
+    for (i = 0; i < nel; i++) {
+        image[i].index = i;
+        image[i].intensity = im[i];
     }
+    qsort(image, nel, sizeof(MserPixel), comp);
+    // ------------------------------
 
     /* initialize the forest with all void nodes */
     for (i = 0; i < (int) nel; ++i) {
@@ -703,7 +687,7 @@ mser_process(MserData *f, unsigned char const *im) {
     // process each pixel
     for (i = 0; i < nel; i++) {
         // index of the current pixel
-        idx = perm[i];
+        idx = image[i].index;
         // intensity of the current pixel
         val = im[idx];
         // index of the root of the current pixel
