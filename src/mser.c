@@ -779,7 +779,7 @@ void mser_process(MserData *f, unsigned char const *im) {
     if (er != NULL) {
         for (i = 0; i < (int) nel; ++i) {
             /* pop next node xi */
-            unsigned int idx = perm[i];
+            unsigned int idx = image[i].index;
 
             unsigned char val = im[idx];
             unsigned int p_idx = r[idx].parent;
