@@ -26,6 +26,132 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 #endif
 
+// MSER filter statistics
+struct _MserStats {
+    int num_extremal;           /**< number of extremal regions                                */
+    int num_unstable;           /**< number of unstable extremal regions                       */
+    int num_abs_unstable;       /**< number of regions that failed the absolute stability test */
+    int num_too_big;            /**< number of regions that failed the maximum size test       */
+    int num_too_small;          /**< number of regions that failed the minimum size test       */
+    int num_duplicates;         /**< number of regions that failed the duplicate test          */
+};
+typedef struct _MserStats MserStats;
+
+//MSER: basic region
+/**
+** Extremal regions and maximally stable extremal regions are
+** instances of image regions.
+**
+** There is an image region for each pixel of the image. Each region
+** is represented by an instance of this structure.  Regions are
+** stored into an array in pixel order.
+**
+** Regions are arranged into a forest. MserReg::parent points to
+** the parent node, or to the node itself if the node is a root.
+** MserReg::parent is the index of the node in the node array
+** (which therefore is also the index of the corresponding
+** pixel). MserReg::height is the distance of the fartest leaf. If
+** the node itself is a leaf, then MserReg::height is zero.
+**
+** MserReg::area is the area of the image region corresponding to
+** this node.
+**
+** MserReg::region is the extremal region identifier. Not all
+** regions are extremal regions however; if the region is NOT
+** extremal, this field is set to ....
+**/
+struct _MserReg {
+    unsigned int parent;         /**< points to the parent region.            */
+    unsigned int shortcut;       /**< points to a region closer to a root.    */
+    unsigned int height;         // height of the region tree
+    unsigned int area;           /**< area of the region.                     */
+};
+typedef struct _MserReg MserReg;
+
+// MSER: extremal region
+/**
+** Extremal regions (ER) are extracted from the region forest. Each
+** region is represented by an instance of this structure. The
+** structures are stored into an array, in arbitrary order.
+**
+** ER are arranged into a tree. @a parent points to the parent ER, or
+** to itself if the ER is the root.
+**
+** An instance of the structure represents the extremal region of the
+** level set of intensity MserExtrReg::value and containing the
+** pixel MserExtReg::index.
+**
+** MserExtrReg::area is the area of the extremal region and
+** MserExtrReg::area_top is the area of the extremal region
+** containing this region in the level set of intensity
+** MserExtrReg::area + @c delta.
+**
+** MserExtrReg::variation is the relative area variation @c
+** (area_top-area)/area.
+**
+** MserExtrReg::max_stable is a flag signaling whether this extremal
+** region is also maximally stable.
+**/
+struct _MserExtrReg {
+    int parent;             // index of the parent region
+    int index;              // index of pivot pixel
+    unsigned char value;    // value of pivot pixel
+    unsigned int shortcut;  // shortcut used when building a tree
+    unsigned int area;      // area of the region
+    float variation;        // rel. area variation
+    unsigned int max_stable;// max stable number (=0 if not maxstable)
+};
+typedef struct _MserExtrReg MserExtrReg;
+
+// MSER Pixel
+struct _MserPixel {
+    int index;               // index of the pixel
+    unsigned char intensity; // intensity of the pixel
+};
+typedef struct _MserPixel MserPixel;
+
+// MSER Data
+struct _MserData {
+    // Image data and meta data
+    int ndims;           // number of dimensions
+    int *dims;           // dimensions
+    int nel;             // number of image elements (pixels)
+    int stride;          // stride to move in image data
+
+    MserPixel* image;     // sorted by intensity image data
+
+    unsigned int *perm;  // pixel ordering
+    unsigned int *joins; // sequence of join ops
+    int njoins;          // number of join ops
+
+    // Regions
+    MserReg *r;         // basic regions
+    MserExtrReg *er;    // extremal tree
+    unsigned int *mer;  // maximally stable extremal regions
+    int ner;            // number of extremal regions
+    int nmer;           // number of maximally stable extr. reg.
+    int rer;            // size of er buffer
+    int rmer;           // size of mer buffer
+
+    // Ellipsoids fitting
+    float *acc;           // moment accumulator.
+    float *ell;           // ellipsoids list.
+    int rell;             // size of ell buffer
+    int nell;             // number of ellipsoids extracted
+    int dof;              // number of dof of ellipsoids.
+
+    // Configuration
+    int verbose;          // be verbose
+    int delta;            // delta filter parameter
+    float max_area;       // badness test parameter
+    float min_area;       // badness test parameter
+    float max_variation;  // badness test parameter
+    float min_diversity;  // minimum diversity
+
+    MserStats stats;      // run statistic
+};
+typedef struct _MserData MserData;
+
 /*void drawPoint(unsigned char *bits, int width, int depth, int x, int y, const uint8_t *color) {
     for (int i = 0; i < min(depth, 3); ++i) {
         bits[(y * width + x) * depth + i] = color[i];
@@ -189,30 +315,7 @@ void drawEllipse(const float *region, int width, int height, int depth, unsigned
 #define MSER_PIX_MAXVAL 256
 
 
-/** @brief MSER Filter
-**
-** The MSER filter computes the Maximally Stable Extremal Regions of
-** an image.
-**
-** @sa @ref mser
-**/
-typedef struct _MserFilt MserFilt;
-
-/** @brief MSER filter statistics */
-typedef struct _MserStats MserStats;
-
-/** @brief MSER filter statistics definition */
-struct _MserStats {
-    int num_extremal;           /**< number of extremal regions                                */
-    int num_unstable;           /**< number of unstable extremal regions                       */
-    int num_abs_unstable;       /**< number of regions that failed the absolute stability test */
-    int num_too_big;            /**< number of regions that failed the maximum size test       */
-    int num_too_small;          /**< number of regions that failed the minimum size test       */
-    int num_duplicates;         /**< number of regions that failed the duplicate test          */
-};
-
-
-void mser_ell_fit(MserFilt *f);
+void mser_ell_fit(MserData *f);
 
 
 /** @} */
@@ -221,22 +324,22 @@ void mser_ell_fit(MserFilt *f);
 /** @name Retrieving data
 ** @{
 **/
-unsigned int mser_get_regions_num(MserFilt const *f);
+unsigned int mser_get_regions_num(MserData const *f);
 
 
-unsigned int const *mser_get_regions(MserFilt const *f);
+unsigned int const *mser_get_regions(MserData const *f);
 
 
-float const *mser_get_ell(MserFilt const *f);
+float const *mser_get_ell(MserData const *f);
 
 
-unsigned int mser_get_ell_num(MserFilt const *f);
+unsigned int mser_get_ell_num(MserData const *f);
 
 
-unsigned int mser_get_ell_dof(MserFilt const *f);
+unsigned int mser_get_ell_dof(MserData const *f);
 
 
-MserStats const *mser_get_stats(MserFilt const *f);
+MserStats const *mser_get_stats(MserData const *f);
 
 
 /** @} */
@@ -262,127 +365,12 @@ typedef float mser_acc;
 /* ----------------------------------------------------------------- */
 
 
-/** @internal
-** @brief MSER: basic region (declaration)
-**
-** Extremal regions and maximally stable extremal regions are
-** instances of image regions.
-**
-** There is an image region for each pixel of the image. Each region
-** is represented by an instance of this structure.  Regions are
-** stored into an array in pixel order.
-**
-** Regions are arranged into a forest. MserReg::parent points to
-** the parent node, or to the node itself if the node is a root.
-** MserReg::parent is the index of the node in the node array
-** (which therefore is also the index of the corresponding
-** pixel). MserReg::height is the distance of the fartest leaf. If
-** the node itself is a leaf, then MserReg::height is zero.
-**
-** MserReg::area is the area of the image region corresponding to
-** this node.
-**
-** MserReg::region is the extremal region identifier. Not all
-** regions are extremal regions however; if the region is NOT
-** extremal, this field is set to ....
-**/
-struct _MserReg {
-    unsigned int parent;         /**< points to the parent region.            */
-    unsigned int shortcut;       /**< points to a region closer to a root.    */
-    unsigned int height;         // height of the region tree
-    unsigned int area;           /**< area of the region.                     */
-};
-
-/** @internal @brief MSER: basic region */
-typedef struct _MserReg MserReg;
-
-/* ----------------------------------------------------------------- */
-
-
-/** @internal
-** @brief MSER: extremal region (declaration)
-**
-** Extremal regions (ER) are extracted from the region forest. Each
-** region is represented by an instance of this structure. The
-** structures are stored into an array, in arbitrary order.
-**
-** ER are arranged into a tree. @a parent points to the parent ER, or
-** to itself if the ER is the root.
-**
-** An instance of the structure represents the extremal region of the
-** level set of intensity MserExtrReg::value and containing the
-** pixel MserExtReg::index.
-**
-** MserExtrReg::area is the area of the extremal region and
-** MserExtrReg::area_top is the area of the extremal region
-** containing this region in the level set of intensity
-** MserExtrReg::area + @c delta.
-**
-** MserExtrReg::variation is the relative area variation @c
-** (area_top-area)/area.
-**
-** MserExtrReg::max_stable is a flag signaling whether this extremal
-** region is also maximally stable.
-**/
-struct _MserExtrReg {
-    int parent;         /**< index of the parent region                   */
-    int index;          /**< index of pivot pixel                         */
-    unsigned char value;          /**< value of pivot pixel                         */
-    unsigned int shortcut;       /**< shortcut used when building a tree           */
-    unsigned int area;           /**< area of the region                           */
-    float variation;      /**< rel. area variation                          */
-    unsigned int max_stable;     /**< max stable number (=0 if not maxstable)      */
-};
-
-
-/** @internal
-** @brief MSER: extremal region */
-typedef struct _MserExtrReg MserExtrReg;
-
-struct _MserFilt {
-    // Image data and meta data
-    int ndims;           // number of dimensions
-    int *dims;           // dimensions
-    int nel;             // number of image elements (pixels)
-    int stride;          // stride to move in image data
-
-    unsigned int *perm;  // pixel ordering
-    unsigned int *joins; // sequence of join ops
-    int njoins;          // number of join ops
-
-    // Regions
-    MserReg *r;         // basic regions
-    MserExtrReg *er;    // extremal tree
-    unsigned int *mer;  // maximally stable extremal regions
-    int ner;            // number of extremal regions
-    int nmer;           // number of maximally stable extr. reg.
-    int rer;            // size of er buffer
-    int rmer;           // size of mer buffer
-
-    // Ellipsoids fitting
-    float *acc;           // moment accumulator.
-    float *ell;           // ellipsoids list.
-    int rell;             // size of ell buffer
-    int nell;             // number of ellipsoids extracted
-    int dof;              // number of dof of ellipsoids.
-
-    // Configuration
-    int verbose;          // be verbose
-    int delta;            // delta filter parameter
-    float max_area;       // badness test parameter
-    float min_area;       // badness test parameter
-    float max_variation;  // badness test parameter
-    float min_diversity;  // minimum diversity
-
-    MserStats stats;      // run statistic
-};
-
 /** @brief Get statistics
 ** @param f MSER filter.
 ** @return statistics.
 **/
 MserStats const *
-mser_get_stats(MserFilt const *f) {
+mser_get_stats(MserData const *f) {
     return (&f->stats);
 }
 
@@ -395,7 +383,7 @@ mser_get_stats(MserFilt const *f) {
 ** @return array of MSER pivots.
 **/
 unsigned int const *
-mser_get_regions(MserFilt const *f) {
+mser_get_regions(MserData const *f) {
     return (f->mer);
 }
 
@@ -405,7 +393,7 @@ mser_get_regions(MserFilt const *f) {
 ** @return number of MSERs.
 **/
 unsigned int
-mser_get_regions_num(MserFilt const *f) {
+mser_get_regions_num(MserData const *f) {
     return (f->nmer);
 }
 
@@ -418,7 +406,7 @@ mser_get_regions_num(MserFilt const *f) {
 ** @return ellipsoids.
 **/
 float const *
-mser_get_ell(MserFilt const *f) {
+mser_get_ell(MserData const *f) {
     return (f->ell);
 }
 
@@ -428,7 +416,7 @@ mser_get_ell(MserFilt const *f) {
 ** @return number of degrees of freedom.
 **/
 unsigned int
-mser_get_ell_dof(MserFilt const *f) {
+mser_get_ell_dof(MserData const *f) {
     return (f->dof);
 }
 
@@ -438,7 +426,7 @@ mser_get_ell_dof(MserFilt const *f) {
 ** @return number of ellipsoids
 **/
 unsigned int
-mser_get_ell_num(MserFilt const *f) {
+mser_get_ell_num(MserData const *f) {
     return (f->nell);
 }
 
@@ -553,9 +541,9 @@ unsigned int find(MserReg *r, unsigned int idx) {
 ** @param dims  dimensions.
 **/
 
-MserFilt* mser_new(int width, int height) {
+MserData* mser_new(int width, int height) {
 
-    MserFilt *f = (MserFilt *) calloc(sizeof(MserFilt), 1);
+    MserData *f = (MserData *) calloc(sizeof(MserData), 1);
     f->ndims = 2;
     f->dims = (int*) malloc(sizeof(int) * f->ndims);
 
@@ -605,7 +593,7 @@ MserFilt* mser_new(int width, int height) {
 **/
 
 void
-mser_delete(MserFilt *f) {
+mser_delete(MserData *f) {
     if (f) {
         if (f->acc)
             free(f->acc);
@@ -648,7 +636,7 @@ mser_delete(MserFilt *f) {
 **/
 
 void
-mser_process(MserFilt *f, unsigned char const *im) {
+mser_process(MserData *f, unsigned char const *im) {
     /* shortcuts */
     unsigned int nel = f->nel;
     unsigned int *perm = f->perm;
@@ -669,6 +657,8 @@ mser_process(MserFilt *f, unsigned char const *im) {
     int ndup = 0;
 
     int i, j;
+    int dsubx, dsuby, subsx, subsy, idx, r_idx, n_idx, nr_idx, dx, dy;
+    unsigned char val, nr_val;
 
     /* delete any previosuly computed ellipsoid */
     f->nell = 0;
@@ -708,9 +698,6 @@ mser_process(MserFilt *f, unsigned char const *im) {
     for (i = 0; i < (int) nel; ++i) {
         r[i].parent = MSER_VOID_NODE;
     }
-
-    int dsubx, dsuby, subsx, subsy, idx, r_idx, n_idx, nr_idx, dx, dy;
-    unsigned char val, nr_val;
 
     // Compute regions and count extremal regions
     // process each pixel
@@ -1045,7 +1032,7 @@ mser_process(MserFilt *f, unsigned char const *im) {
 }
 
 //  Fit ellipsoids
-/*void mser_ell_fit(MserFilt *f) {
+/*void mser_ell_fit(MserData *f) {
     // shortcuts
     int nel = f->nel;
     int dof = f->dof;
@@ -1154,7 +1141,7 @@ int mser(unsigned char *data, int width, int height) {
     char err_msg[1024];
 
     int exit_code = 0;
-    MserFilt *filtinv = 0;
+    MserData *filtinv = 0;
 
     unsigned char *datainv = NULL;
     float const *frames;
