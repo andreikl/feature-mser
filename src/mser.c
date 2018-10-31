@@ -118,9 +118,6 @@ struct _MserData {
 
     MserPixel* image;     // sorted by intensity image data
 
-    unsigned int *joins; // sequence of join ops
-    int njoins;          // number of join ops
-
     // Regions
     MserReg *r;         // basic regions
     MserExtrReg *er;    // extremal tree
@@ -561,7 +558,6 @@ MserData* mser_new(int width, int height) {
         f->dof = 2 * (2 + 1) / 2 + 2;
 
         // more buffers
-        f->joins = (unsigned int *) malloc(sizeof(unsigned int) * f->nel);
         f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
 
         f->er = 0;
@@ -602,8 +598,6 @@ mser_delete(MserData *f) {
             free(f->er);
         if (f->r)
             free(f->r);
-        if (f->joins)
-            free(f->joins);
 
         if (f->dims)
             free(f->dims);
@@ -644,7 +638,6 @@ int comp(const void* x, const void* y) {
 void mser_process(MserData *f, unsigned char const *im) {
     /* shortcuts */
     unsigned int nel = f->nel;
-    unsigned int *joins = f->joins;
     int ndims = f->ndims;
     int *dims = f->dims;
     MserReg *r = f->r;
@@ -725,31 +718,25 @@ void mser_process(MserData *f, unsigned char const *im) {
                     nr_val = im[nr_idx];
 
                     if (nr_val == val) {
-                        // ROOT(IDX) becomes the child, optimize time
+                        // ROOT(IDX) becomes the child, optimize the time
                         r[r_idx].parent = nr_idx;
                         r[r_idx].shortcut = nr_idx;
                         r[nr_idx].area += r[r_idx].area;
-
-                        joins[njoins++] = r_idx;
                     }
                     else {
-                        // ROOT(IDX) becomes the parent
+                        // ROOT(IDX) becomes the parent, extremal region
                         r[nr_idx].parent = r_idx;
                         r[nr_idx].shortcut = r_idx;
                         r[r_idx].area += r[nr_idx].area;
 
-                        joins[njoins++] = nr_idx;
+                        // count extremal region
                         ner++;
                     }
                 }
             }
         }
     } // next pixel
-
-    //save back
-    /*f->njoins = njoins;
-
-    f->stats.num_extremal = ner;*/
+    f->stats.num_extremal = ner;
     //----------------------------------------------------------------------------
 
     // Extract extremal regions --------------------------------------------------
@@ -770,11 +757,12 @@ void mser_process(MserData *f, unsigned char const *im) {
 
     /* save back */
     f->nmer = ner;
+    printf("mser: extremal regions %d\n", ner);
 
     /* count again */
     ner = 0;
 
-    /* scan all regions Xi */
+    // fills all found extremal regions, fills shortcut in image
     if (er != NULL) {
         for (i = 0; i < (int) nel; ++i) {
             /* pop next node xi */
@@ -788,16 +776,16 @@ void mser_process(MserData *f, unsigned char const *im) {
             int is_extr = (p_val > val) || idx == p_idx;
 
             if (is_extr) {
-                /* if so, add it */
+                // if so, add it
                 er[ner].index = idx;
                 er[ner].parent = ner;
                 er[ner].value = im[idx];
                 er[ner].area = r[idx].area;
 
-                /* link this region to this extremal region */
+                // link this region to this extremal region
                 r[idx].shortcut = ner;
 
-                /* increase count */
+                // increase count
                 ++ner;
             } else {
                 /* link this region to void */
@@ -805,12 +793,10 @@ void mser_process(MserData *f, unsigned char const *im) {
             }
         }
     }
+    printf("mser: extremal regions %d\n", ner);
 
 
-    /* -----------------------------------------------------------------
-    *                                   Link extremal regions in a tree
-    * -------------------------------------------------------------- */
-
+    // Link parent of extremal region ----------------------------------
     for (i = 0; i < ner; ++i) {
         unsigned int idx = er[i].index;
 
@@ -821,7 +807,7 @@ void mser_process(MserData *f, unsigned char const *im) {
         er[i].parent = r[idx].shortcut;
         er[i].shortcut = i;
     }
-
+    // -----------------------------------------------------------------
 
     /* -----------------------------------------------------------------
     *                            Compute variability of +DELTA branches

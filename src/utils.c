@@ -69,3 +69,41 @@ unsigned char* read_file(const char* path, int* size) {
     
     return data;
 }
+
+void write_file(const char* path, unsigned char* data, int size) {
+    FILE* fstream;
+
+#ifdef DEBUG
+    clock_t start_time = clock();
+#endif
+
+    if (path[0] == '-') {
+        fstream = stdout;
+    }
+    else {
+        fstream = fopen(path, "w");
+    }
+
+    writen = fwrite(data, 1, size, fstream);
+    if (read > 0) {
+        if (data == NULL) {
+            data = malloc(read);
+        }
+        else {
+            data = realloc(data, *size + read);
+        }
+        memcpy(data + *size, buffer, read);
+        *size += read;
+    }
+
+    if (path[0] != '-') {
+        fclose(fstream);
+    }
+
+#ifdef DEBUG
+    double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
+    printf("write_file: elapsed %f ms\n", diff);
+#endif
+
+    return data;
+}

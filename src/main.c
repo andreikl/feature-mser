@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     }
     else {
         const char* input_file = read_str_value(INPUT, INPUT_DEF);
+        const char* output_file = read_str_value(OUTPUT, OUTPUT_DEF);
         int width = read_int_value(WIDTH, WIDTH_DEF);
         int height = read_int_value(HEIGHT, HEIGHT_DEF);
 
@@ -62,7 +63,7 @@ int main(int argc, char** argv) {
 
         mser(input_data, width, height);
 
-        printf("%s, size: %d\n", input_file, input_size);
+        write_file(output_file, input_data, input_size);
 
         free(input_data);
     }
