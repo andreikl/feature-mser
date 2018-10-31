@@ -50,8 +50,7 @@ typedef struct _MserStats MserStats;
 ** the parent node, or to the node itself if the node is a root.
 ** MserReg::parent is the index of the node in the node array
 ** (which therefore is also the index of the corresponding
-** pixel). MserReg::height is the distance of the fartest leaf. If
-** the node itself is a leaf, then MserReg::height is zero.
+** pixel).
 **
 ** MserReg::area is the area of the image region corresponding to
 ** this node.
@@ -61,10 +60,9 @@ typedef struct _MserStats MserStats;
 ** extremal, this field is set to ....
 **/
 struct _MserReg {
-    unsigned int parent;         /**< points to the parent region.            */
-    unsigned int shortcut;       /**< points to a region closer to a root.    */
-    unsigned int height;         // height of the region tree
-    unsigned int area;           /**< area of the region.                     */
+    unsigned int parent;         // points to the parent region.
+    unsigned int shortcut;       // points to a region closer to a root.
+    unsigned int area;           // area of the region.
 };
 typedef struct _MserReg MserReg;
 
@@ -656,6 +654,7 @@ void mser_process(MserData *f, unsigned char const *im) {
     int delta = f->delta;
 
     int njoins = 0;
+    // number of extremal regions
     int ner = 0;
     int nmer = 0;
     int nbig = 0;
@@ -678,12 +677,11 @@ void mser_process(MserData *f, unsigned char const *im) {
     qsort(image, nel, sizeof(MserPixel), comp);
     // ------------------------------
 
-    /* initialize the forest with all void nodes */
+    // Compute regions and count extremal regions ---
     for (i = 0; i < (int) nel; ++i) {
         r[i].parent = MSER_VOID_NODE;
     }
-
-    // Compute regions and count extremal regions
+    
     // process each pixel
     for (i = 0; i < nel; i++) {
         // index of the current pixel
@@ -697,7 +695,6 @@ void mser_process(MserData *f, unsigned char const *im) {
         r[idx].parent = idx;
         r[idx].shortcut = idx;
         r[idx].area = 1;
-        r[idx].height = 1;
 
         // neighbor index subscript
         dsubx = -1;
@@ -726,34 +723,36 @@ void mser_process(MserData *f, unsigned char const *im) {
                         continue;
 
                     nr_val = im[nr_idx];
+
                     if (nr_val == val) {
-                        // r_idx becomes the child of nr_idx
+                        // ROOT(IDX) becomes the child, optimize time
                         r[r_idx].parent = nr_idx;
                         r[r_idx].shortcut = nr_idx;
                         r[nr_idx].area += r[r_idx].area;
-                        r[nr_idx].height = MAX(r[nr_idx].height, r[r_idx].height + 1);
 
-                        //joins[njoins++] = r_idx;
+                        joins[njoins++] = r_idx;
+                    }
+                    else {
+                        // ROOT(IDX) becomes the parent
+                        r[nr_idx].parent = r_idx;
+                        r[nr_idx].shortcut = r_idx;
+                        r[r_idx].area += r[nr_idx].area;
+
+                        joins[njoins++] = nr_idx;
+                        ner++;
                     }
                 }
             }
         }
     } // next pixel
 
-    //the last root is extremal too
-    /*++ner;
-
     //save back
-    f->njoins = njoins;
+    /*f->njoins = njoins;
 
     f->stats.num_extremal = ner;*/
+    //----------------------------------------------------------------------------
 
-
-    /* -----------------------------------------------------------------
-    *                                          Extract extremal regions
-    * -------------------------------------------------------------- */
-
-
+    // Extract extremal regions --------------------------------------------------
     /*
     * Extremal regions are extracted and stored into the array ER.  The
     * structure R is also updated so that .SHORTCUT indexes the
@@ -761,7 +760,7 @@ void mser_process(MserData *f, unsigned char const *im) {
     * VOID).
     */
 
-    /* make room */
+    // allocate memory into er for extremal regions
     if (f->rer < ner) {
         if (er)
             free(er);
