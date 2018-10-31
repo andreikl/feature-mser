@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
 
         mser(input_data, width, height);
 
-        write_file(output_file, input_data, input_size);
+        write_file(output_file, input_data, width, height);
 
         free(input_data);
     }

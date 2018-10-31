@@ -70,8 +70,11 @@ unsigned char* read_file(const char* path, int* size) {
     return data;
 }
 
-void write_file(const char* path, unsigned char* data, int size) {
+void write_file(const char* path, unsigned char* data, int width, int height) {
     FILE* fstream;
+    size_t written;
+    unsigned char buffer[BUFFER_SIZE];
+    int i = 0, j = 0, size = width * height;
 
 #ifdef DEBUG
     clock_t start_time = clock();
@@ -84,16 +87,20 @@ void write_file(const char* path, unsigned char* data, int size) {
         fstream = fopen(path, "w");
     }
 
-    writen = fwrite(data, 1, size, fstream);
-    if (read > 0) {
-        if (data == NULL) {
-            data = malloc(read);
+    sprintf(buffer, "P6\n%d %d\n255\n\0", width, height);
+    fwrite(buffer, 1, strlen(buffer), fstream);
+    while (j < size) {
+        if (i + 3 >= BUFFER_SIZE) {
+            written += fwrite(buffer, 1, i, fstream);
+            i = 0;
         }
-        else {
-            data = realloc(data, *size + read);
-        }
-        memcpy(data + *size, buffer, read);
-        *size += read;
+        buffer[i] = data[j];
+        buffer[i + 1] = data[j];
+        buffer[i + 2] = data[j];
+        i += 3; j++;
+    }
+    if (i > 0) {
+        written += fwrite(buffer, 1, i, fstream);
     }
 
     if (path[0] != '-') {
@@ -104,6 +111,4 @@ void write_file(const char* path, unsigned char* data, int size) {
     double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
     printf("write_file: elapsed %f ms\n", diff);
 #endif
-
-    return data;
 }
