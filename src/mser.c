@@ -589,24 +589,24 @@ MserData* mser_new(int width, int height) {
 void
 mser_delete(MserData *f) {
     if (f) {
-        if (f->acc)
-            free(f->acc);
-        if (f->ell)
-            free(f->ell);
+        //if (f->acc)
+        //    free(f->acc);
+        //if (f->ell)
+        //    free(f->ell);
 
         if (f->er)
             free(f->er);
         if (f->r)
             free(f->r);
 
-        if (f->dims)
-            free(f->dims);
+        //if (f->dims)
+        //    free(f->dims);
 
         if (f->image)
             free(f->image);
 
-        if (f->mer)
-            free(f->mer);
+        //if (f->mer)
+        //    free(f->mer);
         free(f);
     }
 }
@@ -635,7 +635,7 @@ int comp(const void* x, const void* y) {
 ** @param im image data.
 **/
 
-void mser_process(MserData *f, unsigned char const *im) {
+void mser_process(MserData *f, unsigned char *im) {
     /* shortcuts */
     unsigned int nel = f->nel;
     int ndims = f->ndims;
@@ -717,6 +717,12 @@ void mser_process(MserData *f, unsigned char const *im) {
 
                     nr_val = im[nr_idx];
 
+                    //1. same intensity
+                    //+(r)
+                    //?(i) becames root
+                    //2. different intensity
+                    //+(r) ?(i) becomes root
+                    //|(r)   
                     if (nr_val == val) {
                         // ROOT(IDX) becomes the child, optimize the time
                         r[r_idx].parent = nr_idx;
@@ -739,14 +745,12 @@ void mser_process(MserData *f, unsigned char const *im) {
     f->stats.num_extremal = ner;
     //----------------------------------------------------------------------------
 
-    // Extract extremal regions --------------------------------------------------
-    /*
-    * Extremal regions are extracted and stored into the array ER.  The
-    * structure R is also updated so that .SHORTCUT indexes the
-    * corresponding extremal region if any (otherwise it is set to
-    * VOID).
-    */
 
+    // Extract extremal regions --------------------------------------------------
+    // Extremal regions are extracted and stored into the array ER.  The
+    // structure R is also updated so that .SHORTCUT indexes the
+    // corresponding extremal region if any (otherwise it is set to
+    // VOID).
     // allocate memory into er for extremal regions
     if (f->rer < ner) {
         if (er)
@@ -755,24 +759,23 @@ void mser_process(MserData *f, unsigned char const *im) {
         f->rer = ner;
     };
 
-    /* save back */
+    // save back
     f->nmer = ner;
     printf("mser: extremal regions %d\n", ner);
 
-    /* count again */
+    // count again
     ner = 0;
 
     // fills all found extremal regions, fills shortcut in image
     if (er != NULL) {
         for (i = 0; i < (int) nel; ++i) {
-            /* pop next node xi */
+            // pop next node xi
             unsigned int idx = image[i].index;
-
             unsigned char val = im[idx];
             unsigned int p_idx = r[idx].parent;
             unsigned char p_val = im[p_idx];
 
-            /* is extremal ? */
+            // is extremal ?
             int is_extr = (p_val > val) || idx == p_idx;
 
             if (is_extr) {
@@ -788,16 +791,25 @@ void mser_process(MserData *f, unsigned char const *im) {
                 // increase count
                 ++ner;
             } else {
-                /* link this region to void */
+                // link this region to void
                 r[idx].shortcut = MSER_VOID_NODE;
             }
+#ifdef DEBUG
+            // draw image with regions and roots
+            if (idx == p_idx) {
+                im[idx] = 255;
+            }
+            else {
+                im[idx] = ner % 254;
+            }
+#endif
         }
     }
     printf("mser: extremal regions %d\n", ner);
 
 
     // Link parent of extremal region ----------------------------------
-    for (i = 0; i < ner; ++i) {
+    /*for (i = 0; i < ner; ++i) {
         unsigned int idx = er[i].index;
 
         do {
@@ -809,38 +821,32 @@ void mser_process(MserData *f, unsigned char const *im) {
     }
     // -----------------------------------------------------------------
 
-    /* -----------------------------------------------------------------
-    *                            Compute variability of +DELTA branches
-    * -------------------------------------------------------------- */
-
-
-    /* For each extremal region Xi of value VAL we look for the biggest
-    * parent that has value not greater than VAL+DELTA. This is dubbed
-    * `top parent'. */
-
+    // Compute variability of +DELTA branches --------------------------
+    // For each extremal region Xi of value VAL we look for the biggest
+    // parent that has value not greater than VAL+DELTA. This is dubbed
+    // `top parent'.
     for (i = 0; i < ner; ++i) {
-        /* Xj is the current region the region and Xj are the parents */
+        // Xj is the current region the region and Xj are the parents
         int top_val = er[i].value + delta;
         int top = er[i].shortcut;
 
-        /* examine all parents */
+        // examine all parents
         while (1) {
             int next = er[top].parent;
             int next_val = er[next].value;
 
 
-            /* Break if:
-            * - there is no node above the top or
-            * - the next node is above the top value.
-            */
+            // Break if:
+            // - there is no node above the top or
+            // - the next node is above the top value.
             if (next == top || next_val > top_val)
                 break;
 
-            /* so next could be the top */
+            // so next could be the top
             top = next;
         }
 
-        /* calculate branch variation */
+        // calculate branch variation
         {
             int area = er[i].area;
             int area_top = er[top].area;
@@ -849,24 +855,22 @@ void mser_process(MserData *f, unsigned char const *im) {
         }
 
 
-        /* Optimization: since extremal regions are processed by
-        * increasing intensity, all next extremal regions being processed
-        * have value at least equal to the one of Xi. If any of them has
-        * parent the parent of Xi (this comprises the parent itself), we
-        * can safely skip most intermediate node along the branch and
-        * skip directly to the top to start our search. */
+        // Optimization: since extremal regions are processed by
+        // increasing intensity, all next extremal regions being processed
+        // have value at least equal to the one of Xi. If any of them has
+        // parent the parent of Xi (this comprises the parent itself), we
+        // can safely skip most intermediate node along the branch and
+        // skip directly to the top to start our search.
         {
             int parent = er[i].parent;
             int curr = er[parent].shortcut;
             er[parent].shortcut = MAX(top, curr);
         }
     }
+    // ------------------------------------------------------------------------
 
 
-    /* -----------------------------------------------------------------
-    *                                  Select maximally stable branches
-    * -------------------------------------------------------------- */
-
+    // maximally stable branches ----------------------------------------------
     nmer = ner;
     for (i = 0; i < ner; ++i) {
         unsigned int parent = er[i].parent;
@@ -877,19 +881,17 @@ void mser_process(MserData *f, unsigned char const *im) {
         unsigned int loser;
 
 
-        /*
-        * Notice that R_parent = R_{l+1} only if p_val = val + 1. If not,
-        * this and the parent region coincide and there is nothing to do.
-        */
+        // Notice that R_parent = R_{l+1} only if p_val = val + 1. If not,
+        // this and the parent region coincide and there is nothing to do.
         if (p_val > val + 1)
             continue;
 
-        /* decide which one to keep and put that in loser */
+        // decide which one to keep and put that in loser
         if (var < p_var)
             loser = parent;
         else loser = i;
 
-        /* make loser NON maximally stable */
+        // make loser NON maximally stable
         if (er[loser].max_stable) {
             --nmer;
             er[loser].max_stable = 0;
@@ -899,22 +901,18 @@ void mser_process(MserData *f, unsigned char const *im) {
     f->stats.num_unstable = ner - nmer;
 
 
-    /* -----------------------------------------------------------------
-    *                                                 Further filtering
-    * -------------------------------------------------------------- */
-
-
-    /* It is critical for correct duplicate detection to remove regions
-    * from the bottom (smallest one first).                          */
+    // Further filtering ---------------------------------------------
+    // It is critical for correct duplicate detection to remove regions
+    // from the bottom (smallest one first).
     {
         float max_area = (float) f->max_area * nel;
         float min_area = (float) f->min_area * nel;
         float max_var = (float) f->max_variation;
         float min_div = (float) f->min_diversity;
 
-        /* scan all extremal regions (intensity value order) */
+        // scan all extremal regions (intensity value order)
         for (i = ner - 1; i >= 0L; --i) {
-            /* process only maximally stable extremal regions */
+            // process only maximally stable extremal regions
             if (!er[i].max_stable)
                 continue;
 
@@ -932,17 +930,15 @@ void mser_process(MserData *f, unsigned char const *im) {
             }
 
 
-            /*
-            * Remove duplicates
-            */
+            // Remove duplicates
             if (min_div < 1.0) {
                 unsigned int parent = er[i].parent;
                 int area, p_area;
                 float div;
 
-                /* check all but the root mser */
+                // check all but the root mser
                 if ((int) parent != i) {
-                    /* search for the maximally stable parent region */
+                    // search for the maximally stable parent region
                     while (!er[parent].max_stable) {
                         unsigned int next = er[parent].parent;
                         if (next == parent)
@@ -950,9 +946,8 @@ void mser_process(MserData *f, unsigned char const *im) {
                         parent = next;
                     }
 
-
-                    /* Compare with the parent region; if the current and parent
-                    * regions are too similar, keep only the parent. */
+                    // Compare with the parent region; if the current and parent
+                    // regions are too similar, keep only the parent.
                     area = er[i].area;
                     p_area = er[parent].area;
                     div = (float) (p_area - area) / (float) p_area;
@@ -961,13 +956,13 @@ void mser_process(MserData *f, unsigned char const *im) {
                         ++ndup;
                         goto remove;
                     }
-                } /* remove dups end */
+                } // remove dups end
             }
             continue;
             remove:
             er[i].max_stable = 0;
             --nmer;
-        }         /* check next region */
+        } // check next region
 
         f->stats.num_abs_unstable = nbad;
         f->stats.num_too_big = nbig;
@@ -976,11 +971,8 @@ void mser_process(MserData *f, unsigned char const *im) {
     }
 
 
-    /* -----------------------------------------------------------------
-    *                                                   Save the result
-    * -------------------------------------------------------------- */
-
-    /* make room */
+    // Save the result ---------------------------------------------
+    // make room
     if (f->rmer < nmer) {
         if (mer)
             free(mer);
@@ -988,7 +980,7 @@ void mser_process(MserData *f, unsigned char const *im) {
         f->rmer = nmer;
     }
 
-    /* save back */
+    // save back
     f->nmer = nmer;
 
     j = 0;
@@ -997,7 +989,7 @@ void mser_process(MserData *f, unsigned char const *im) {
             if (er[i].max_stable)
                 mer[j++] = er[i].index;
         }
-    }
+    }*/
 }
 
 //  Fit ellipsoids
@@ -1146,12 +1138,12 @@ int mser(unsigned char *data, int width, int height) {
     printf("mser: elapsed %f s\n", diff);
 #endif
 
-    int  nregionsinv = mser_get_regions_num(filtinv);
-    unsigned int const *  regionsinv = mser_get_regions(filtinv);
+    //int  nregionsinv = mser_get_regions_num(filtinv);
+    //unsigned int const *  regionsinv = mser_get_regions(filtinv);
 
-    for (i = 0; i < nregionsinv; ++i) {
-        printf("%d \t ", -regionsinv[i]);
-    }
+    //for (i = 0; i < nregionsinv; ++i) {
+    //    printf("%d \t ", -regionsinv[i]);
+    //}
 
     /*mser_ell_fit(filtinv);
     nframesinv = mser_get_ell_num(filtinv);

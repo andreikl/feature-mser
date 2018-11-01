@@ -75,6 +75,7 @@ void write_file(const char* path, unsigned char* data, int width, int height) {
     size_t written;
     unsigned char buffer[BUFFER_SIZE];
     int i = 0, j = 0, size = width * height;
+    unsigned char b;
 
 #ifdef DEBUG
     clock_t start_time = clock();
@@ -94,9 +95,24 @@ void write_file(const char* path, unsigned char* data, int width, int height) {
             written += fwrite(buffer, 1, i, fstream);
             i = 0;
         }
-        buffer[i] = data[j];
-        buffer[i + 1] = data[j];
-        buffer[i + 2] = data[j];
+
+        b = data[j];
+#ifdef DEBUG
+        if (b == 255) {
+            buffer[i] = b;
+            buffer[i + 1] = (unsigned char)0;
+            buffer[i + 2] = (unsigned char)0;
+        }
+        else {
+            buffer[i] = b;
+            buffer[i + 1] = b;
+            buffer[i + 2] = b;
+        }
+#else
+        buffer[i] = b;
+        buffer[i + 1] = b;
+        buffer[i + 2] = b;
+#endif
         i += 3; j++;
     }
     if (i > 0) {
