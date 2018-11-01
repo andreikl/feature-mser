@@ -18,6 +18,8 @@ const char* INPUT = "-i";
 const char* INPUT_DEF = "-";
 const char* OUTPUT = "-o";
 const char* OUTPUT_DEF = "-";
+const char* DEBUG = "-d";
+const char* DEBUG_DEF = "";
 
 KHASH_MAP_INIT_STR(str, char*)
 khash_t(str) *h;
@@ -31,10 +33,13 @@ void print_help() {
     printf("%s: height, default: %d\n", HEIGHT, HEIGHT_DEF);
     printf("%s: input, default:  %s, -: input stream\n", INPUT, INPUT_DEF);
     printf("%s: output, default:  %s, -: output stream\n", OUTPUT, OUTPUT_DEF);
+    printf("%s: debug, default:  %s, -: output stream\n", DEBUG, DEBUG_DEF);
     printf("%s: algorithm's name, default: %s\n", ALGORITHM, ALGORITHM_MSER);
     printf("algorithms: %s\n", ALGORITHM_MSER);
     exit(0);
 }
+
+char* debug_file;
 
 int main(int argc, char** argv) {
     h = kh_init(str);
@@ -55,6 +60,7 @@ int main(int argc, char** argv) {
     else {
         const char* input_file = read_str_value(INPUT, INPUT_DEF);
         const char* output_file = read_str_value(OUTPUT, OUTPUT_DEF);
+        debug_file = read_str_value(DEBUG, DEBUG_DEF);
         int width = read_int_value(WIDTH, WIDTH_DEF);
         int height = read_int_value(HEIGHT, HEIGHT_DEF);
 
@@ -63,7 +69,7 @@ int main(int argc, char** argv) {
 
         mser(input_data, width, height);
 
-        write_file(output_file, input_data, width, height);
+        //write_file(output_file, input_data, width, height);
 
         free(input_data);
     }

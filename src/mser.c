@@ -5,6 +5,7 @@
 * the terms of the BSD license (see the COPYING file).
 */
 #include "constants.h"
+#include "utils.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -26,39 +27,36 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 #endif
 
+#ifdef DEBUG
+extern char* debug_file;
+#endif // DEBUG
+
+
 // MSER filter statistics
 struct _MserStats {
-    int num_extremal;           /**< number of extremal regions                                */
-    int num_unstable;           /**< number of unstable extremal regions                       */
-    int num_abs_unstable;       /**< number of regions that failed the absolute stability test */
-    int num_too_big;            /**< number of regions that failed the maximum size test       */
-    int num_too_small;          /**< number of regions that failed the minimum size test       */
-    int num_duplicates;         /**< number of regions that failed the duplicate test          */
+    int num_extremal;           // number of extremal regions
+    int num_unstable;           // number of unstable extremal regions
+    int num_abs_unstable;       // number of regions that failed the absolute stability test
+    int num_too_big;            // number of regions that failed the maximum size test
+    int num_too_small;          // number of regions that failed the minimum size test
+    int num_duplicates;         // number of regions that failed the duplicate test
 };
 typedef struct _MserStats MserStats;
 
 //MSER: basic region
-/**
-** Extremal regions and maximally stable extremal regions are
-** instances of image regions.
-**
-** There is an image region for each pixel of the image. Each region
-** is represented by an instance of this structure.  Regions are
-** stored into an array in pixel order.
-**
-** Regions are arranged into a forest. MserReg::parent points to
-** the parent node, or to the node itself if the node is a root.
-** MserReg::parent is the index of the node in the node array
-** (which therefore is also the index of the corresponding
-** pixel).
-**
-** MserReg::area is the area of the image region corresponding to
-** this node.
-**
-** MserReg::region is the extremal region identifier. Not all
-** regions are extremal regions however; if the region is NOT
-** extremal, this field is set to ....
-**/
+//There is an image region for each pixel of the image. Each region
+//is represented by an instance of this structure.  Regions are
+//stored into an array in pixel order.
+//MserReg::parent points to
+//the parent node, or to the node itself if the node is a root.
+//MserReg::parent is the index of the node in the node array
+//
+// MserReg::area is the area of the image region corresponding to
+// this node.
+//
+// MserReg::region is the extremal region identifier. Not all
+// regions are extremal regions however; if the region is NOT
+// extremal, this field is set to ....
 struct _MserReg {
     unsigned int parent;         // points to the parent region.
     unsigned int shortcut;       // points to a region closer to a root.
@@ -117,6 +115,10 @@ struct _MserData {
     int stride;          // stride to move in image data
 
     MserPixel* image;     // sorted by intensity image data
+
+#ifdef DEBUG
+    unsigned char* debug; // debug data if it is enabled
+#endif // DEBUG
 
     // Regions
     MserReg *r;         // basic regions
@@ -524,87 +526,64 @@ unsigned int find(MserReg *r, unsigned int idx) {
 }
 
 
-/** -------------------------------------------------------------------
-** @brief Create a new MSER filter
-**
-** Initializes a new MSER filter for images of the specified
-** dimensions. Images are @a ndims -dimensional arrays of dimensions
-** @a dims.
-**
-** @param ndims number of dimensions.
-** @param dims  dimensions.
-**/
-
+// Create a new MSER data
 MserData* mser_new(int width, int height) {
-
     MserData *f = (MserData *) calloc(sizeof(MserData), 1);
+
     f->ndims = 2;
     f->dims = (int*) malloc(sizeof(int) * f->ndims);
 
     // shortcuts
-    if (f->dims != NULL) {
-        // copy dims to f->dims
-        f->dims[0] = width;
-        f->dims[1] = height;
+    f->dims[0] = width;
+    f->dims[1] = height;
 
-        f->stride = width;
+    f->stride = width;
 
-        // total number of pixels
-        f->nel = f->stride * height;
+    // total number of pixels
+    f->nel = f->stride * height;
 
-        f->image = (unsigned int *)malloc(sizeof(MserPixel) * f->nel);
+    f->image = (MserPixel*)malloc(sizeof(MserPixel) * f->nel);
+#ifdef DEBUG
+    f->debug = (unsigned char*)malloc(f->nel);
+#endif // DEBUG
 
-        // dof of ellipsoids
-        f->dof = 2 * (2 + 1) / 2 + 2;
+    // dof of ellipsoids
+    f->dof = 2 * (2 + 1) / 2 + 2;
 
-        // more buffers
-        f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
+    // more buffers
+    f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
 
-        f->er = 0;
-        f->rer = 0;
-        f->mer = 0;
-        f->rmer = 0;
-        f->ell = 0;
-        f->rell = 0;
-
-        // other parameters
-        f->delta = 2;
-        f->max_area = 0.5f;
-        f->min_area = 0.0001f;
-        f->max_variation = 0.5f;
-        f->min_diversity = 0.33f;
-    }
-    return (f);
+    // other parameters
+    f->delta = 2;
+    f->max_area = 0.5f;
+    f->min_area = 0.0001f;
+    f->max_variation = 0.5f;
+    f->min_diversity = 0.33f;
+    return f;
 }
 
 
-/** -------------------------------------------------------------------
-** @brief Delete MSER filter
-**
-** The function releases the MSER filter @a f and all its resources.
-**
-** @param f MSER filter to be deleted.
-**/
-
-void
-mser_delete(MserData *f) {
+// Delete MSER data
+void mser_delete(MserData *f) {
     if (f) {
+        if (f->image)
+            free(f->image);
+#ifdef DEBUG
+        if (f->debug)
+            free(f->debug);
+#endif // DEBUG
+
+        if (f->r)
+            free(f->r);
+        if (f->er)
+            free(f->er);
+
         //if (f->acc)
         //    free(f->acc);
         //if (f->ell)
         //    free(f->ell);
-
-        if (f->er)
-            free(f->er);
-        if (f->r)
-            free(f->r);
-
         //if (f->dims)
         //    free(f->dims);
-
-        if (f->image)
-            free(f->image);
-
         //if (f->mer)
         //    free(f->mer);
         free(f);
@@ -645,6 +624,10 @@ void mser_process(MserData *f, unsigned char *im) {
     MserExtrReg *er = f->er;
     unsigned int *mer = f->mer;
     int delta = f->delta;
+
+#ifdef DEBUG
+    unsigned char* debug = f->debug;
+#endif
 
     int njoins = 0;
     // number of extremal regions
@@ -742,7 +725,7 @@ void mser_process(MserData *f, unsigned char *im) {
             }
         }
     } // next pixel
-    f->stats.num_extremal = ner;
+    f->stats.num_extremal = ++ner; // 1 for root
     //----------------------------------------------------------------------------
 
 
@@ -797,10 +780,10 @@ void mser_process(MserData *f, unsigned char *im) {
 #ifdef DEBUG
             // draw image with regions and roots
             if (idx == p_idx) {
-                im[idx] = 255;
+                debug[idx] = 255;
             }
             else {
-                im[idx] = ner % 254;
+                debug[idx] = ner % 254;
             }
 #endif
         }
@@ -1136,6 +1119,8 @@ int mser(unsigned char *data, int width, int height) {
 #ifdef DEBUG
     double diff = (double)(clock() - start_time) / CLOCKS_PER_SEC;
     printf("mser: elapsed %f s\n", diff);
+
+    write_file(debug_file, filtinv->debug, width, height);
 #endif
 
     //int  nregionsinv = mser_get_regions_num(filtinv);
