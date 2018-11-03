@@ -1,11 +1,4 @@
-/*
-* Copyright (C) 2007-12 Andrea Vedaldi and Brian Fulkerson.
-* All rights reserved.
-* This file is part of the VLFeat library and is made available under
-* the terms of the BSD license (see the COPYING file).
-*/
-#include "constants.h"
-#include "utils.h"
+#include <math.h>
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -14,6 +7,11 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+
+#include <kvec.h>
+
+#include "constants.h"
+#include "utils.h"
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846   // pi
@@ -31,9 +29,10 @@
 extern char* debug_file;
 #endif // DEBUG
 
+#define MSER_PIXEL_MAXVALUE 256
 
-// MSER filter statistics
-struct _MserStats {
+// MSER statistic
+struct _MserStatistic {
     int num_extremal;           // number of extremal regions
     int num_unstable;           // number of unstable extremal regions
     int num_abs_unstable;       // number of regions that failed the absolute stability test
@@ -41,63 +40,14 @@ struct _MserStats {
     int num_too_small;          // number of regions that failed the minimum size test
     int num_duplicates;         // number of regions that failed the duplicate test
 };
-typedef struct _MserStats MserStats;
-
-//MSER: basic region
-//There is an image region for each pixel of the image. Each region
-//is represented by an instance of this structure.  Regions are
-//stored into an array in pixel order.
-//MserReg::parent points to
-//the parent node, or to the node itself if the node is a root.
-//MserReg::parent is the index of the node in the node array
-//
-// MserReg::area is the area of the image region corresponding to
-// this node.
-//
-// MserReg::region is the extremal region identifier. Not all
-// regions are extremal regions however; if the region is NOT
-// extremal, this field is set to ....
-struct _MserReg {
-    unsigned int parent;         // points to the parent region.
-    unsigned int shortcut;       // points to a region closer to a root.
-    unsigned int area;           // area of the region.
-};
-typedef struct _MserReg MserReg;
+typedef struct _MserStatistic MserStatistic;
 
 // MSER: extremal region
-/**
-** Extremal regions (ER) are extracted from the region forest. Each
-** region is represented by an instance of this structure. The
-** structures are stored into an array, in arbitrary order.
-**
-** ER are arranged into a tree. @a parent points to the parent ER, or
-** to itself if the ER is the root.
-**
-** An instance of the structure represents the extremal region of the
-** level set of intensity MserExtrReg::value and containing the
-** pixel MserExtReg::index.
-**
-** MserExtrReg::area is the area of the extremal region and
-** MserExtrReg::area_top is the area of the extremal region
-** containing this region in the level set of intensity
-** MserExtrReg::area + @c delta.
-**
-** MserExtrReg::variation is the relative area variation @c
-** (area_top-area)/area.
-**
-** MserExtrReg::max_stable is a flag signaling whether this extremal
-** region is also maximally stable.
-**/
-struct _MserExtrReg {
-    int parent;             // index of the parent region
-    int index;              // index of pivot pixel
-    unsigned char value;    // value of pivot pixel
-    unsigned int shortcut;  // shortcut used when building a tree
-    unsigned int area;      // area of the region
-    float variation;        // rel. area variation
-    unsigned int max_stable;// max stable number (=0 if not maxstable)
+struct _MserRegion {
+    int level;
+    int pixel;
 };
-typedef struct _MserExtrReg MserExtrReg;
+typedef struct _MserRegion MserRegion;
 
 // MSER Pixel
 struct _MserPixel {
@@ -108,490 +58,85 @@ typedef struct _MserPixel MserPixel;
 
 // MSER Data
 struct _MserData {
-    // Image data and meta data
-    int ndims;           // number of dimensions
-    int *dims;           // dimensions
-    int nel;             // number of image elements (pixels)
-    int stride;          // stride to move in image data
-
-    MserPixel* image;     // sorted by intensity image data
-
-#ifdef DEBUG
-    unsigned char* debug; // debug data if it is enabled
-#endif // DEBUG
+    int width;
+    int height;
+    int pixels;         // number of pixels
+    MserPixel* image;   // sorted by intensity image data
 
     // Regions
-    MserReg *r;         // basic regions
-    MserExtrReg *er;    // extremal tree
-    unsigned int *mer;  // maximally stable extremal regions
-    int ner;            // number of extremal regions
-    int nmer;           // number of maximally stable extr. reg.
-    int rer;            // size of er buffer
-    int rmer;           // size of mer buffer
-
-    // Ellipsoids fitting
-    float *acc;           // moment accumulator.
-    float *ell;           // ellipsoids list.
-    int rell;             // size of ell buffer
-    int nell;             // number of ellipsoids extracted
-    int dof;              // number of dof of ellipsoids.
+    kvec_t(int) boundaryPixels[MSER_PIXEL_MAXVALUE];
+    // Extremal regions
+    kvec_t(MserRegion) regionStack;
 
     // Configuration
-    int verbose;          // be verbose
     int delta;            // delta filter parameter
     float max_area;       // badness test parameter
     float min_area;       // badness test parameter
     float max_variation;  // badness test parameter
     float min_diversity;  // minimum diversity
-
-    MserStats stats;      // run statistic
+    // statistic
+    MserStatistic statistic;
+#ifdef DEBUG
+    unsigned char* debug; // debug data if it is enabled
+#endif // DEBUG
 };
 typedef struct _MserData MserData;
 
-/*void drawPoint(unsigned char *bits, int width, int depth, int x, int y, const uint8_t *color) {
-    for (int i = 0; i < min(depth, 3); ++i) {
-        bits[(y * width + x) * depth + i] = color[i];
-    }
-}
-
-void drawLine(unsigned char *bits, int width, int depth, int startX, int startY, int endX, int endY,
-              const uint8_t *col) {
-    if (endX == startX) {
-        if (startY > endY) {
-            int a = startY;
-            startY = endY;
-            endY = a;
-        }
-        for (int y = startY; y <= endY; y++) {
-            drawPoint(bits, width, depth, startX, y, col);
-        }
-    } else {
-        float m = 1.0f * (endY - startY) / (endX - startX);
-        int y = 0;
-        if (startX > endX) {
-            int a = startX;
-            startX = endX;
-            endX = a;
-        }
-        for (int x = startX; x <= endX; x++) {
-            y = (int) (m * (x - startX) + startY);
-            drawPoint(bits, width, depth, x, y, col);
-        }
-    }
-}
-
-
-void drawRectangle(unsigned char *bits, int width, int depth, int x1, int y1, int x2, int y2, const uint8_t *col) {
-    drawLine(bits, width, depth, x1, y1, x2, y1, col);
-    drawLine(bits, width, depth, x2, y1, x2, y2, col);
-    drawLine(bits, width, depth, x2, y2, x1, y2, col);
-    drawLine(bits, width, depth, x1, y2, x1, y1, col);
-}*/
-
-/*void drawRectangleByRegion(const float *region, int width, int height, int depth, unsigned char *bits,
-                           const uint8_t *color) {
-
-    // Centroid (mean)
-    const float x = region[0];
-    const float y = region[1];
-
-    // Covariance matrix [a b; b c]
-    const float a = region[2];
-    const float b = region[3];
-    const float c = region[4];
-
-    // Eigenvalues of the covariance matrix
-    const float d = a + c;
-    const float e = a - c;
-    const float f = sqrtf(4.0f * b * b + e * e);
-    const float e0 = (d + f) / 2.0f;       //First eigenvalue 
-    const float e1 = (d - f) / 2.0f;       //Second eigenvalue
-
-    // Desired norm of the eigenvectors
-    const float e0sq = sqrtf(e0);
-    const float e1sq = sqrtf(e1);
-
-    // Eigenvectors
-    float v0x = e0sq;
-    float v0y = 0.0f;
-    float v1x = 0.0f;
-    float v1y = e1sq;
-
-    if (b) {
-        v0x = e0 - c;
-        v0y = b;
-        v1x = e1 - c;
-        v1y = b;
-
-        // Normalize the eigenvectors
-        const float n0 = e0sq / sqrtf(v0x * v0x + v0y * v0y);
-        v0x *= n0;
-        v0y *= n0;
-
-        const float n1 = e1sq / sqrtf(v1x * v1x + v1y * v1y);
-        v1x *= n1;
-        v1y *= n1;
-    }
-    int min_x = 0;
-    int min_y = 0;
-    int max_x = 0;
-    int max_y = 0;
-    for (float t = 0.0f; t < 2.0f * M_PI; t += 0.001f) {
-        int x2 = (int) (x + (cosf(t) * v0x + sinf(t) * v1x) * 2.0f + 0.5f);
-        int y2 = (int) (y + (cosf(t) * v0y + sinf(t) * v1y) * 2.0f + 0.5f);
-
-        if ((x2 >= 0) && (x2 < width) && (y2 >= 0) && (y2 < height)) {
-
-            max_x = max(max_x, x2);
-            max_y = max(max_y, y2);
-        }
-    }
-    min_x = max(0, x * 2 - max_x);
-    min_y = max(0, y * 2 - max_y);
-    drawRectangle(bits, width, depth, min_x, min_y, max_x, max_y, color);
-}*/
-
-void drawEllipse(const float *region, int width, int height, int depth, unsigned char *bits, const uint8_t *color) {
-    // Centroid (mean)
-    const float x = region[0];
-    const float y = region[1];
-
-    // Covariance matrix [a b; b c]
-    const float a = region[2];
-    const float b = region[3];
-    const float c = region[4];
-
-    // Eigenvalues of the covariance matrix
-    const float d = a + c;
-    const float e = a - c;
-    const float f = sqrtf(4.0f * b * b + e * e);
-    const float e0 = (d + f) / 2.0f;       // First eigenvalue
-    const float e1 = (d - f) / 2.0f;       // Second eigenvalue
-
-    // Desired norm of the eigenvectors
-    const float e0sq = sqrtf(e0);
-    const float e1sq = sqrtf(e1);
-
-    // Eigenvectors
-    float v0x = e0sq;
-    float v0y = 0.0f;
-    float v1x = 0.0f;
-    float v1y = e1sq;
-
-    if (b) {
-        v0x = e0 - c;
-        v0y = b;
-        v1x = e1 - c;
-        v1y = b;
-
-        // Normalize the eigenvectors
-        const float n0 = e0sq / sqrtf(v0x * v0x + v0y * v0y);
-        v0x *= n0;
-        v0y *= n0;
-
-        const float n1 = e1sq / sqrtf(v1x * v1x + v1y * v1y);
-        v1x *= n1;
-        v1y *= n1;
-    }
-
-    for (float t = 0.0f; t < 2.0f * M_PI; t += 0.001f) {
-        int x2 = (int) (x + (cosf(t) * v0x + sinf(t) * v1x) * 2.0f + 0.5f);
-        int y2 = (int) (y + (cosf(t) * v0y + sinf(t) * v1y) * 2.0f + 0.5f);
-
-        if ((x2 >= 0) && (x2 < width) && (y2 >= 0) && (y2 < height))
-            for (int i = 0; i < min(depth, 3); ++i)
-                bits[(y2 * width + x2) * depth + i] = color[i];
-    }
-}
-
-/** @brief Maximum value
-**
-** Maximum value of the integer type ::unsigned char.
-**/
-#define MSER_PIX_MAXVAL 256
-
-
-void mser_ell_fit(MserData *f);
-
-
-/** @} */
-
-
-/** @name Retrieving data
-** @{
-**/
-unsigned int mser_get_regions_num(MserData const *f);
-
-
-unsigned int const *mser_get_regions(MserData const *f);
-
-
-float const *mser_get_ell(MserData const *f);
-
-
-unsigned int mser_get_ell_num(MserData const *f);
-
-
-unsigned int mser_get_ell_dof(MserData const *f);
-
-
-MserStats const *mser_get_stats(MserData const *f);
-
-
-/** @} */
-
-
-/** @internal
-** @brief MSER accumulator data type
-**
-** This is a large integer type. It should be large enough to contain
-** a number equal to the area (volume) of the image by the image
-** width by the image height (for instance, if the image is a square
-** of side 256, the maximum value is 256 x 256 x 256).
-**/
-typedef float mser_acc;
-
-/** @internal @brief Basic region flag: null region */
+// null region
 #ifdef COMPILER_MSC
 #define MSER_VOID_NODE ( (1ui64 << 32) - 1)
 #else
 #define MSER_VOID_NODE ( (1ULL << 32) - 1)
 #endif
 
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get statistics
-** @param f MSER filter.
-** @return statistics.
-**/
-MserStats const *
-mser_get_stats(MserData const *f) {
-    return (&f->stats);
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get maximally stable extremal regions
-** @param f MSER filter.
-** @return array of MSER pivots.
-**/
-unsigned int const *
-mser_get_regions(MserData const *f) {
-    return (f->mer);
-}
-
-
-/** @brief Get number of maximally stable extremal regions
-** @param f MSER filter.
-** @return number of MSERs.
-**/
-unsigned int
-mser_get_regions_num(MserData const *f) {
-    return (f->nmer);
-}
-
-
-/* ----------------------------------------------------------------- */
-
-
-/** @brief Get ellipsoids
-** @param f MSER filter.
-** @return ellipsoids.
-**/
-float const *
-mser_get_ell(MserData const *f) {
-    return (f->ell);
-}
-
-
-/** @brief Get number of degrees of freedom of ellipsoids
-** @param f MSER filter.
-** @return number of degrees of freedom.
-**/
-unsigned int
-mser_get_ell_dof(MserData const *f) {
-    return (f->dof);
-}
-
-
-/** @brief Get number of ellipsoids
-** @param f MSER filter.
-** @return number of ellipsoids
-**/
-unsigned int
-mser_get_ell_num(MserData const *f) {
-    return (f->nell);
-}
-
-
-/*MSER */
-
-
-/** -------------------------------------------------------------------
-** @brief Advance N-dimensional subscript
-**
-** The function increments by one the subscript @a subs indexing an
-** array the @a ndims dimensions @a dims.
-**
-** @param ndims number of dimensions.
-** @param dims dimensions.
-** @param subs subscript to advance.
-**/
-
-void adv(int ndims, int const *dims, int *subs) {
-    int d = 0;
-    while (d < ndims) {
-        if (++subs[d] < dims[d])
-            return;
-        subs[d++] = 0;
-    }
-}
-
-
-// works faster??? 1.5s
-/** -------------------------------------------------------------------
-** @brief Climb the region forest to reach aa root
-**
-** The function climbs the regions forest @a r starting from the node
-** @a idx to the corresponding root.
-**
-** To speed-up the operation, the function uses the
-** MserReg::shortcut field to quickly jump to the root. After the
-** root is reached, all the used shortcut are updated.
-**
-** @param r regions' forest.
-** @param idx stating node.
-** @return index of the reached root.
-**/
-/*unsigned int climb(MserReg *r, unsigned int idx) {
-    unsigned int prev_idx = idx;
-    unsigned int next_idx;
-    unsigned int root_idx;
-
-    // move towards root to find it
-    while (1) {
-        // next jump to the root
-        next_idx = r[idx].shortcut;
-
-        // recycle shortcut to remember how we came here
-        r[idx].shortcut = prev_idx;
-
-        // stop if the root is found
-        if (next_idx == idx)
-            break;
-
-        // next guy
-        prev_idx = idx;
-        idx = next_idx;
-    }
-
-    root_idx = idx;
-
-    // move backward to update shortcuts
-    while (1) {
-        // get previously visited one
-        prev_idx = r[idx].shortcut;
-
-        // update shortcut to point to the new root
-        r[idx].shortcut = root_idx;
-
-        // stop if the first visited node is reached
-        if (prev_idx == idx)
-            break;
-
-        // next guy
-        idx = prev_idx;
-    }
-
-    return (root_idx);
-}*/
-
-// find the root and optimise path
-unsigned int find(MserReg *r, unsigned int idx) {
-    unsigned int next_idx = r[idx].shortcut;
-
-    // move towards root to find it
-    while (next_idx != idx) {
-        // optimize current parrent points directly to next parent
-        r[idx].shortcut = r[next_idx].shortcut;
-        // move to next node
-        idx = next_idx;
-        // get parent
-        next_idx = r[idx].shortcut;
-    }
-    return idx;
-}
-
-
 // Create a new MSER data
 MserData* mser_new(int width, int height) {
+    int i;
     MserData *f = (MserData *) calloc(sizeof(MserData), 1);
 
-    f->ndims = 2;
-    f->dims = (int*) malloc(sizeof(int) * f->ndims);
+    f->width = width;
+    f->height = height;
+    f->pixels = width * height;
+    f->image = (MserPixel*)malloc(sizeof(MserPixel) * f->pixels);
+    for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
+        kv_init(f->boundaryPixels[i]);
+    }
+    kv_init(f->regionStack);
 
-    // shortcuts
-    f->dims[0] = width;
-    f->dims[1] = height;
+    // Configuration
+    f->delta = 2; // delta > 0
+    f->min_area = 0.0001f; // min_area >= 0.0
+    f->max_area = 0.5f; // max_area >= min_area && max_area <= 1.0
+    f->max_variation = 0.5f; // max_variation > 0.0
+    f->min_diversity = 0.33f; // min_diversity >= 0.0 && min_diversity < 1.0
 
-    f->stride = width;
-
-    // total number of pixels
-    f->nel = f->stride * height;
-
-    f->image = (MserPixel*)malloc(sizeof(MserPixel) * f->nel);
 #ifdef DEBUG
-    f->debug = (unsigned char*)malloc(f->nel);
+    f->debug = (unsigned char*)malloc(f->pixels);
 #endif // DEBUG
 
-    // dof of ellipsoids
-    f->dof = 2 * (2 + 1) / 2 + 2;
-
-    // more buffers
-    f->r = (MserReg *) malloc(sizeof(MserReg) * f->nel);
-
-    // other parameters
-    f->delta = 2;
-    f->max_area = 0.5f;
-    f->min_area = 0.0001f;
-    f->max_variation = 0.5f;
-    f->min_diversity = 0.33f;
     return f;
 }
 
 
 // Delete MSER data
 void mser_delete(MserData *f) {
+    int i;
     if (f) {
         if (f->image)
             free(f->image);
+
+        for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
+            kv_destroy(f->boundaryPixels[i]);
+        }
+        kv_destroy(f->regionStack);
+
 #ifdef DEBUG
         if (f->debug)
             free(f->debug);
 #endif // DEBUG
-
-        if (f->r)
-            free(f->r);
-        if (f->er)
-            free(f->er);
-
-        //if (f->acc)
-        //    free(f->acc);
-        //if (f->ell)
-        //    free(f->ell);
-        //if (f->dims)
-        //    free(f->dims);
-        //if (f->mer)
-        //    free(f->mer);
         free(f);
     }
 }
-
-
-#define MAX(x, y) ( ( (x) > (y) ) ? (x) : (y) )
 
 int comp(const void* x, const void* y) {
     MserPixel* vx = (MserPixel*)x;
@@ -601,19 +146,7 @@ int comp(const void* x, const void* y) {
     return 0;
 }
 
-/** -------------------------------------------------------------------
-** @brief Process image
-**
-** The functions calculates the Maximally Stable Extremal Regions
-** (MSERs) of image @a im using the MSER filter @a f.
-**
-** The filter @a f must have been initialized to be compatible with
-** the dimensions of @a im.
-**
-** @param f MSER filter.
-** @param im image data.
-**/
-
+// Process image
 void mser_process(MserData *f, unsigned char *im) {
     /* shortcuts */
     unsigned int nel = f->nel;
