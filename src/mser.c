@@ -25,6 +25,10 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 #endif
 
+#define mser_get_visited_index(i) (i / 32)
+#define mser_get_visited_value(i, v) (v & (1 << (i % 32)))
+#define mser_set_visited_value(i, v) (v & (1 << (i % 32)))
+
 #ifdef DEBUG
 extern char* debug_file;
 #endif // DEBUG
@@ -60,8 +64,8 @@ typedef struct _MserPixel MserPixel;
 struct _MserData {
     int width;
     int height;
-    int pixels;         // number of pixels
-    MserPixel* image;   // sorted by intensity image data
+    int pixels;          // number of pixels
+    uint32_t* visited;   // visited pixels
 
     // Regions
     kvec_t(int) boundaryPixels[MSER_PIXEL_MAXVALUE];
@@ -92,12 +96,12 @@ typedef struct _MserData MserData;
 // Create a new MSER data
 MserData* mser_new(int width, int height) {
     int i;
-    MserData *f = (MserData *) calloc(sizeof(MserData), 1);
+    MserData *f = (MserData *) calloc(1, sizeof(MserData));
 
     f->width = width;
     f->height = height;
     f->pixels = width * height;
-    f->image = (MserPixel*)malloc(sizeof(MserPixel) * f->pixels);
+    f->visited = (bool*)calloc(1, f->pixels);
     for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
         kv_init(f->boundaryPixels[i]);
     }
@@ -122,8 +126,8 @@ MserData* mser_new(int width, int height) {
 void mser_delete(MserData *f) {
     int i;
     if (f) {
-        if (f->image)
-            free(f->image);
+        if (f->visited)
+            free(f->visited);
 
         for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
             kv_destroy(f->boundaryPixels[i]);
@@ -147,7 +151,14 @@ int comp(const void* x, const void* y) {
 }
 
 // Process image
-void mser_process(MserData *f, unsigned char *im) {
+void mser_process(MserData *mser, unsigned char *image) {
+    uint32_t* visited = mser->visited;
+
+    int currentPixel = 0;
+    int currentEdge = 0;
+    int currentLevel = image[0];
+    visited[mser_get_visited_index(currentPixel)] = 
+
     /* shortcuts */
     unsigned int nel = f->nel;
     int ndims = f->ndims;
