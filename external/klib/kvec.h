@@ -73,7 +73,7 @@ int main() {
 			(v).m = (v).m? (v).m<<1 : 2;							\
 			(v).a = (type*)realloc((v).a, sizeof(type) * (v).m);	\
 		}															\
-		(v).a[(v).n++] = (x);										\
+		(v).a[(v).n++] = (type)(x);										\
 	} while (0)
 
 #define kv_pushp(type, v) (((v).n == (v).m)?							\

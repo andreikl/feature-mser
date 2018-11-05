@@ -25,10 +25,6 @@
 #define min(a, b)            (((a) < (b)) ? (a) : (b))
 #endif
 
-#define mser_get_visited_index(i) (i / 32)
-#define mser_get_visited_value(i, v) (v & (1 << (i % 32)))
-#define mser_set_visited_value(i, v) (v & (1 << (i % 32)))
-
 #ifdef DEBUG
 extern char* debug_file;
 #endif // DEBUG
@@ -64,13 +60,13 @@ typedef struct _MserPixel MserPixel;
 struct _MserData {
     int width;
     int height;
-    int pixels;          // number of pixels
-    uint32_t* visited;   // visited pixels
+    int pixels;      // number of pixels
+    bool* visited;   // visited pixels
 
     // Regions
-    kvec_t(int) boundaryPixels[MSER_PIXEL_MAXVALUE];
+    kvec_t(int) boundary_pixels[MSER_PIXEL_MAXVALUE];
     // Extremal regions
-    kvec_t(MserRegion) regionStack;
+    kvec_t(MserRegion*) region_stack;
 
     // Configuration
     int delta;            // delta filter parameter
@@ -101,11 +97,11 @@ MserData* mser_new(int width, int height) {
     f->width = width;
     f->height = height;
     f->pixels = width * height;
-    f->visited = (bool*)calloc(1, f->pixels);
+    f->visited = (bool*)calloc(1, f->pixels * sizeof(bool));
     for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
-        kv_init(f->boundaryPixels[i]);
+        kv_init(f->boundary_pixels[i]);
     }
-    kv_init(f->regionStack);
+    kv_init(f->region_stack);
 
     // Configuration
     f->delta = 2; // delta > 0
@@ -130,9 +126,9 @@ void mser_delete(MserData *f) {
             free(f->visited);
 
         for (i = 0; i < MSER_PIXEL_MAXVALUE; i++) {
-            kv_destroy(f->boundaryPixels[i]);
+            kv_destroy(f->boundary_pixels[i]);
         }
-        kv_destroy(f->regionStack);
+        kv_destroy(f->region_stack);
 
 #ifdef DEBUG
         if (f->debug)
@@ -152,12 +148,13 @@ int comp(const void* x, const void* y) {
 
 // Process image
 void mser_process(MserData *mser, unsigned char *image) {
-    uint32_t* visited = mser->visited;
+    bool* visited = mser->visited;
 
     int currentPixel = 0;
     int currentEdge = 0;
     int currentLevel = image[0];
-    visited[mser_get_visited_index(currentPixel)] = 
+    visited[currentPixel] = true;
+    kv_push(MserRegion, mser->region_stack, malloc(sizeof(MserRegion)));
 
     /* shortcuts */
     unsigned int nel = f->nel;
