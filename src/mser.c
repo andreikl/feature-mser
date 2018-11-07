@@ -148,13 +148,108 @@ int comp(const void* x, const void* y) {
 
 // Process image
 void mser_process(MserData *mser, unsigned char *image) {
+    // local variables
+    MserRegion* region;
     bool* visited = mser->visited;
+    kvec_t(int)* boundary_pixels = mser->boundary_pixels;
+    int width = mser->width, height = mser->height;
+    // Make the source pixel(with its first edge) the current pixel and store the grey - level of it in the variable current level.
+    int current_pixel = 0, current_edge = 0, current_level = image[0];
+    int neighbor_pixel, neighbor_level, new_level;
+    int priority = MSER_PIXEL_MAXVALUE, temp;
 
-    int currentPixel = 0;
-    int currentEdge = 0;
-    int currentLevel = image[0];
-    visited[currentPixel] = true;
+    // Push a dummy-component onto the stack, with grey-level higher than any allowed in the image.
     kv_push(MserRegion, mser->region_stack, malloc(sizeof(MserRegion)));
+
+    // mark sourse pixel as visited
+    visited[current_pixel] = true;
+
+    // 3. Push an empty component with current level onto the component stack.
+step_3:
+    region = malloc(sizeof(MserRegion));
+    region->level = current_level; region->pixel = current_pixel;
+    kv_push(MserRegion, mser->region_stack, region);
+
+    // 4. Explore the remaining edges to the neighbors of the current pixel, in order, as follows:
+    // For each neighbor, check if the neighbor is already accessible. If it is not, mark it as
+    // accessible and retrieve its grey-level. If the grey-level is not lower than the current one,
+    // push it onto the heap of boundary pixels. If on the other hand the grey-level is lower than
+    // the current one, enter the current pixel back into the queue of boundary pixels for later
+    // processing (with the next edge number), consider the new pixel and its grey-level and go to step_3.
+    while (true) {
+        const int x = current_pixel % width;
+        const int y = current_pixel / width;
+        for (; current_edge < 4; current_edge++) {
+            neighbor_pixel = current_pixel;
+
+            if (current_edge == 0) {
+                if (x < width - 1) neighbor_pixel = current_pixel + 1;
+            }
+            else if (current_edge == 1) {
+                if (y < height - 1) neighbor_pixel = current_pixel + width;
+            }
+            else if (current_edge == 2) {
+                if (x > 0) neighbor_pixel = current_pixel - 1;
+            }
+            else {
+                if (y > 0) neighbor_pixel = current_pixel - width;
+            }
+
+            if (neighbor_pixel != current_pixel && !visited[neighbor_pixel]) {
+                neighbor_level = image[neighbor_pixel];
+                visited[neighbor_pixel] = true;
+                if (neighbor_level >= current_level) {
+                    kv_push(int, boundary_pixels[neighbor_level], neighbor_pixel << 4);
+
+                    if (neighbor_level < priority)
+                        priority = neighbor_level;
+                }
+                else {
+                    kv_push(int, boundary_pixels[current_level], (current_pixel << 4) | current_edge + 1);
+
+                    if (current_level < priority)
+                        priority = current_level;
+
+                    current_pixel = neighbor_pixel;
+                    current_edge = 0;
+                    current_level = neighbor_level;
+
+                    goto step_3;
+                }
+            }
+        }
+
+        // 5. Accumulate the current pixel to the component at the top of the stack (water saturates the current pixel).
+        //region = mser->region_stack.a[mser->region_stack.n - 1];
+        //accumulate(x, y);
+
+        // 6. Pop the heap of boundary pixels. If the heap is empty, we are done. If the returned
+        // pixel is at the same grey-level as the previous, go to 4.
+        if (priority == 256) {
+            //region = mser->region_stack.a[mser->region_stack.n - 1];
+            //detect (delta_, minArea_ * width * height, maxArea_ * width * height, maxVariation_, minDiversity_, regions);
+            return;
+        }
+
+        temp = kv_pop(boundary_pixels[priority]);
+        current_pixel = temp >> 4;
+        current_edge = temp & 15;
+
+        while (boundary_pixels[priority].n == 0 && (priority < 256))
+            ++priority;
+
+        int new_level = image[current_pixel];
+        if (new_level != current_level) {
+            current_level = new_level;
+
+            // 7. The returned pixel is at a higher grey-level, so we must now process
+            // all components on the component stack until we reach the higher
+            // grey-level. This is done with the processStack sub-routine, see below.
+            // Then go to 4.
+            //processStack(new_level, current_pixel, mser->region_stack);
+        }
+    }
+
 
     /* shortcuts */
     unsigned int nel = f->nel;
