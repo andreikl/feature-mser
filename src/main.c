@@ -24,7 +24,7 @@ const char* DEBUG_DEF = "";
 KHASH_MAP_INIT_STR(str, char*)
 khash_t(str) *h;
 
-void print_help() {
+void print_help(void) {
     printf("edge-detector [options]\n");
     printf("options:\n");
     printf("\n");
