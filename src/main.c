@@ -39,7 +39,7 @@ void print_help(void) {
     exit(0);
 }
 
-char* debug_file;
+const char* debug_file;
 
 int main(int argc, char** argv) {
     h = kh_init(str);
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     }
     else {
         const char* input_file = read_str_value(INPUT, INPUT_DEF);
-        const char* output_file = read_str_value(OUTPUT, OUTPUT_DEF);
+        //const char* output_file = read_str_value(OUTPUT, OUTPUT_DEF);
         debug_file = read_str_value(DEBUG, DEBUG_DEF);
         int width = read_int_value(WIDTH, WIDTH_DEF);
         int height = read_int_value(HEIGHT, HEIGHT_DEF);

@@ -7,10 +7,10 @@
 
 #include "constants.h"
 
-KHASH_MAP_INIT_STR(str, char*)
+KHASH_MAP_INIT_STR(str, char *)
 extern khash_t(str) *h;
 
-char* read_str_value(const char* name, const char def_value[]) {
+const char * read_str_value(const char *name, const char *def_value) {
     unsigned k = kh_get(str, h, name);
     if (k != kh_end(h)) {
         return kh_val(h, k);
@@ -27,9 +27,9 @@ int read_int_value(const char name[], int def_value) {
     return def_value;
 }
 
-unsigned char* read_file(const char* path, int* size) {
+unsigned char * read_file(const char * path, int *size) {
     unsigned char buffer[BUFFER_SIZE];
-    FILE* fstream;
+    FILE *fstream;
     size_t read;
 
     #ifdef DEBUG
@@ -43,7 +43,7 @@ unsigned char* read_file(const char* path, int* size) {
         fstream = fopen(path, "r");
     }
 
-    unsigned char* data = NULL; *size = 0;
+    unsigned char *data = NULL; *size = 0;
     do {
         read = fread(buffer, sizeof(buffer[0]), BUFFER_SIZE, fstream);
         if (read > 0) {
@@ -70,7 +70,7 @@ unsigned char* read_file(const char* path, int* size) {
     return data;
 }
 
-void write_file(const char* path, unsigned char* data, int width, int height) {
+void write_file(const char *path, unsigned char *data, int width, int height) {
     FILE* fstream;
     size_t written;
     unsigned char buffer[BUFFER_SIZE];
@@ -88,8 +88,8 @@ void write_file(const char* path, unsigned char* data, int width, int height) {
         fstream = fopen(path, "w");
     }
 
-    sprintf(buffer, "P6\n%d %d\n255\n\0", width, height);
-    fwrite(buffer, 1, strlen(buffer), fstream);
+
+    fprintf(fstream, "P6\n%d %d\n255\n", width, height);
     while (j < size) {
         if (i + 3 >= BUFFER_SIZE) {
             written += fwrite(buffer, 1, i, fstream);

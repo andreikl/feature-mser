@@ -14,7 +14,7 @@
 #include "utils.h"
 
 #ifdef DEBUG
-extern char* debug_file;
+extern const char* debug_file;
 #endif // DEBUG
 
 #define MSER_PIXEL_MAXVALUE 256
@@ -187,7 +187,6 @@ void mser_process(MserData *mser, unsigned char *image) {
     // local variables
     MserRegion* region;
     bool* visited = mser->visited;
-    kvec_t(int)* boundary_pixels = mser->boundary_pixels;
     int width = mser->width, height = mser->height;
     // Make the source pixel(with its first edge) the current pixel and store the grey - level of it in the variable current level.
     int current_pixel = 0, neighbor_pixel;
@@ -235,13 +234,13 @@ step_3:
                 neighbor_level = image[neighbor_pixel];
                 visited[neighbor_pixel] = true;
                 if (neighbor_level >= current_level) {
-                    kv_push(int, boundary_pixels[neighbor_level], neighbor_pixel << 4);
+                    kv_push(int, mser->boundary_pixels[neighbor_level], neighbor_pixel << 4);
 
                     if (neighbor_level < priority)
                         priority = neighbor_level;
                 }
                 else {
-                    kv_push(int, boundary_pixels[current_level], (current_pixel << 4) | current_edge + 1);
+                    kv_push(int, mser->boundary_pixels[current_level], (current_pixel << 4) | (current_edge + 1));
 
                     if (current_level < priority)
                         priority = current_level;
@@ -267,11 +266,11 @@ step_3:
             return;
         }
 
-        temp = kv_pop(boundary_pixels[priority]);
+        temp = kv_pop(mser->boundary_pixels[priority]);
         current_pixel = temp >> 4;
         current_edge = temp & 15;
 
-        while (boundary_pixels[priority].n == 0 && (priority < 256))
+        while (mser->boundary_pixels[priority].n == 0 && (priority < 256))
             ++priority;
 
         new_level = image[current_pixel];
