@@ -70,13 +70,6 @@ struct _MserData {
 };
 typedef struct _MserData MserData;
 
-// null region
-#ifdef COMPILER_MSC
-#define MSER_VOID_NODE ( (1ui64 << 32) - 1)
-#else
-#define MSER_VOID_NODE ( (1ULL << 32) - 1)
-#endif
-
 // Create a new MSER data
 MserData* mser_new(int width, int height) {
     int i;
@@ -154,6 +147,8 @@ void region_merge(MserRegion *x, MserRegion *y)
 void process_stack(int new_level, int pixel, MserData *mser) {
     MserRegion *top, *next_top, *new_region;
 
+    // 1. Process component on the top of the stack. The next grey-level is the minimum of
+    // new_level and the grey-level for the second component on the stack.
     do {
         top = kv_pop(mser->region_stack);
         next_top = kv_A(mser->region_stack, mser->region_stack.n - 1);
@@ -194,7 +189,9 @@ void mser_process(MserData *mser, unsigned char *image) {
     int priority = MSER_PIXEL_MAXVALUE, temp;
 
     // Push a dummy-component onto the stack, with grey-level higher than any allowed in the image.
-    kv_push(MserRegion*, mser->region_stack, calloc(1, sizeof(MserRegion)));
+    region = calloc(1, sizeof(MserRegion));
+    region->level = 256;
+    kv_push(MserRegion*, mser->region_stack, region);
 
     // mark sourse pixel as visited
     visited[current_pixel] = true;
